@@ -1,4 +1,6 @@
 const esbuild = require("esbuild");
+const fs = require('fs');
+const path = require('path');
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
@@ -23,6 +25,39 @@ const esbuildProblemMatcherPlugin = {
 	},
 };
 
+/**
+ * @type {import('esbuild').Plugin}
+ */
+const copyCodiconsPlugin = {
+	name: 'copy-codicons-plugin',
+	setup(build) {
+		build.onEnd(() => {
+			// Ensure dist directory exists
+			if (!fs.existsSync('dist')) {
+				fs.mkdirSync('dist', { recursive: true });
+			}
+			
+			// Copy Codicons font file
+			const fontSrc = path.join(__dirname, 'node_modules', '@vscode', 'codicons', 'dist', 'codicon.ttf');
+			const fontDest = path.join(__dirname, 'dist', 'codicon.ttf');
+			
+			// Copy CSS file
+			const cssSrc = path.join(__dirname, 'node_modules', '@vscode', 'codicons', 'dist', 'codicon.css');
+			const cssDest = path.join(__dirname, 'dist', 'codicon.css');
+			
+			try {
+				fs.copyFileSync(fontSrc, fontDest);
+				console.log('✓ Copied codicon.ttf to dist folder');
+				
+				fs.copyFileSync(cssSrc, cssDest);
+				console.log('✓ Copied codicon.css to dist folder');
+			} catch (error) {
+				console.error('✘ Error copying Codicons files:', error);
+			}
+		});
+	}
+};
+
 async function main() {
 	const ctx = await esbuild.context({
 		entryPoints: [
@@ -38,8 +73,8 @@ async function main() {
 		external: ['vscode'],
 		logLevel: 'silent',
 		plugins: [
-			/* add to the end of plugins array */
 			esbuildProblemMatcherPlugin,
+			copyCodiconsPlugin,
 		],
 	});
 	if (watch) {

@@ -37,10 +37,11 @@ export class SastViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
         webviewView.webview.options = {
             enableScripts: true,
-            // Assurer que node_modules est inclus pour les ressources (Codicons)
+            // Mise à jour des localResourceRoots pour inclure dist
             localResourceRoots: [
                 vscode.Uri.joinPath(this._extensionUri, 'media'), // Si pertinent
-                vscode.Uri.joinPath(this._extensionUri, 'node_modules') // Pour Codicons
+                vscode.Uri.joinPath(this._extensionUri, 'dist'),  // Pour Codicons copiés
+                vscode.Uri.joinPath(this._extensionUri, 'node_modules') // Garder pour compatibilité
             ]
         };
 

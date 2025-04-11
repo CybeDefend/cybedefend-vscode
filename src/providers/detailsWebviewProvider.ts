@@ -41,8 +41,9 @@ export class DetailsWebviewViewProvider implements vscode.Disposable {
                 enableScripts: true,
                 retainContextWhenHidden: true,
                 localResourceRoots: [
-                    // Autoriser l'accès aux ressources dans node_modules pour les Codicons
-                    vscode.Uri.joinPath(this._extensionUri, 'node_modules'),
+                    // Autoriser l'accès aux ressources pour les Codicons
+                    vscode.Uri.joinPath(this._extensionUri, 'dist'), // Pour Codicons copiés
+                    vscode.Uri.joinPath(this._extensionUri, 'node_modules'), // Garder pour compatibilité
                     // Autoriser l'accès aux médias si vous en avez
                     vscode.Uri.joinPath(this._extensionUri, 'media'),
                 ]

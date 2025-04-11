@@ -49,10 +49,11 @@ export class SummaryViewProvider implements vscode.WebviewViewProvider, vscode.D
 
         webviewView.webview.options = {
             enableScripts: true,
-            // MODIFIÉ: Inclure 'node_modules' pour Codicons si getCommonAssetUris est utilisé
+            // Mise à jour pour inclure dist pour les Codicons
             localResourceRoots: [
                 vscode.Uri.joinPath(this._extensionUri, 'media'), // Si vous avez un dossier media
-                vscode.Uri.joinPath(this._extensionUri, 'node_modules') // Pour les Codicons
+                vscode.Uri.joinPath(this._extensionUri, 'dist'),  // Pour Codicons copiés
+                vscode.Uri.joinPath(this._extensionUri, 'node_modules') // Garder pour compatibilité
             ]
         };
 

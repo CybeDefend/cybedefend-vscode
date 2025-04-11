@@ -5,7 +5,7 @@ import { DetailedVulnerability, VulnerabilitySeverityEnum } from '../../dtos/res
 import { SastVulnerabilityDetectionDto, IacVulnerabilityDetectionDto, ScaVulnerabilityWithCvssDto } from '../../dtos/result/details'; // Specific types
 import { ScanType } from '../../api/apiService'; // Ajuster chemin
 import { getNonce } from '../../utilities/utils'; // Ajuster chemin
-import { getSeverityClass, severityToIconMap, getCommonAssetUris, getCodiconStyleSheet } from './commonHtmlUtils';
+import { getSeverityClass, severityToIconMap, getCommonAssetUris, getCodiconStyleSheet, severityColorMap } from './commonHtmlUtils';
 import path from 'path';
 
 /**
@@ -88,7 +88,8 @@ export function getFindingsViewHtml(
                 const severity = vuln.currentSeverity?.toUpperCase() || VulnerabilitySeverityEnum.UNKNOWN;
                 const iconId = severityToIconMap[severity] || 'question';
                 const severityClass = getSeverityClass(severity);
-                const severityColorClass = severityClass.replace('severity-', 'color-');
+                const severityColor = severityColorMap[severity] || severityColorMap['UNKNOWN'];
+                const severityStyle = `color: ${severityColor}; font-weight: bold;`;
                 const meta = vuln.vulnerability;
                 const title = escape(meta.name || vuln.id);
                 let line = 0;
@@ -127,7 +128,7 @@ export function getFindingsViewHtml(
 
                 return `
                     <li class="finding-item ${severityClass}" data-vulnerability='${vulnDataString}' data-scan-type='${scanType}' title="${escape(vuln.id)} - Click for details" tabindex="0">
-                        <span class="codicon codicon-${iconId} severity-icon ${severityColorClass}" aria-label="Severity ${severity}"></span>
+                        <span class="codicon codicon-${iconId} severity-icon" style="${severityStyle}" aria-label="Severity ${severity}"></span>
                         <div class="finding-content">
                              <span class="finding-title">${title}</span>
                              ${locationHtml}
@@ -138,7 +139,7 @@ export function getFindingsViewHtml(
             findingsGroupHtml += `
                 <details class="file-group" ${findingsCount <= 15 ? 'open' : ''}>
                     <summary class="file-summary" title="${escape(filePathKey)}">
-                         <span class="codicon chevron"></span>
+                         <span class="codicon codicon-chevron-right"></span>
                          <span class="codicon file-icon ${isUnspecifiedFile ? 'codicon-question' : 'codicon-file-code'}"></span>
                          <span class="file-name">${escape(displayFileName)}</span>
                          <span class="file-vuln-count">${fileVulnCount}</span>
@@ -171,12 +172,12 @@ export function getFindingsViewHtml(
             ${getCodiconStyleSheet(codiconsFontUri)}
 
             :root {
-                 --severity-color-critical: var(--vscode-errorForeground, #D14949);
-                 --severity-color-high: var(--vscode-list-warningForeground, #E17D3A);
-                 --severity-color-medium: var(--vscode-testing-iconPassed, #007ACC);
-                 --severity-color-low: var(--vscode-descriptionForeground, #777777);
-                 --severity-color-info: var(--vscode-textSeparator-foreground, #999999);
-                 --severity-color-unknown: var(--vscode-disabledForeground, #AAAAAA);
+                 --severity-color-critical: ${severityColorMap[VulnerabilitySeverityEnum.CRITICAL]};
+                 --severity-color-high: ${severityColorMap[VulnerabilitySeverityEnum.HIGH]};
+                 --severity-color-medium: ${severityColorMap[VulnerabilitySeverityEnum.MEDIUM]};
+                 --severity-color-low: ${severityColorMap[VulnerabilitySeverityEnum.LOW]};
+                 --severity-color-info: ${severityColorMap[VulnerabilitySeverityEnum.INFO]};
+                 --severity-color-unknown: ${severityColorMap['UNKNOWN']};
                  --file-group-border: 1px solid var(--vscode-tree-tableColumnsBorderColor, var(--vscode-editorGroup-border));
                  --file-summary-bg: rgba(var(--vscode-list-inactiveSelectionBackground-rgb), 0.5);
                  --file-summary-hover-bg: var(--vscode-list-hoverBackground);
@@ -214,14 +215,14 @@ export function getFindingsViewHtml(
              .file-summary::marker,
              .file-summary::-webkit-details-marker { display: none; }
 
-             .file-summary .chevron {
+             .file-summary .codicon-chevron-right {
                  font-size: 1em; color: var(--vscode-icon-foreground);
                  margin-right: 2px; width: 16px; text-align: center;
-                 transition: transform 0.15s ease-in-out; /* Transition pour la rotation */
+                 transition: transform 0.15s ease-in-out;
              }
-              /* Rotation du chevron avec CSS */
-             .file-summary .chevron::before { content: "\\ea74"; /* chevron-right par défaut */ display: inline-block; }
-             details[open] > summary .chevron::before { transform: rotate(90deg); } /* pivote vers le bas */
+             details[open] > summary .codicon-chevron-right {
+                 transform: rotate(90deg);
+             }
 
              .file-summary .file-icon { color: var(--vscode-icon-foreground); font-size: 1em; }
              .file-name {
@@ -248,13 +249,30 @@ export function getFindingsViewHtml(
              li.finding-item:hover { background-color: var(--vscode-list-hoverBackground); }
              li.finding-item:focus { outline: 1px solid var(--vscode-focusBorder); background-color: var(--vscode-list-focusBackground); outline-offset: -1px; }
 
-            .severity-icon { flex-shrink: 0; font-size: 1em; width: 16px; text-align: center; margin-right: 2px;}
-             .color-critical { color: var(--severity-color-critical); }
-             .color-high { color: var(--severity-color-high); }
-             .color-medium { color: var(--severity-color-medium); }
-             .color-low { color: var(--severity-color-low); }
-             .color-info { color: var(--severity-color-info); }
-             .color-unknown { color: var(--severity-color-unknown); }
+            .severity-icon { 
+                flex-shrink: 0; 
+                font-size: 0.9em; 
+                width: 18px; 
+                height: 18px;
+                text-align: center; 
+                margin-right: 5px;
+                font-weight: bold;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background-color: rgba(255, 255, 255, 0.08);
+                border: 1px solid currentColor;
+                transition: transform 0.1s ease, background-color 0.1s ease;
+            }
+            
+            li.finding-item:hover .severity-icon,
+            li.finding-item:focus .severity-icon {
+                background-color: rgba(255, 255, 255, 0.15);
+                transform: scale(1.05);
+            }
+            
+            /* Les classes color-* ne sont plus nécessaires car nous utilisons style inline */
 
             .finding-content { flex-grow: 1; overflow: hidden; display: flex; flex-direction: column; gap: 1px; }
             .finding-title { font-weight: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
