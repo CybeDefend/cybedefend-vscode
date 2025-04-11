@@ -1,0 +1,88 @@
+// See https://go.microsoft.com/fwlink/?LinkId=733558
+// for the documentation about the tasks.json format
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+            "label": "watch",
+            "dependsOn": [
+                "npm: watch:tsc",
+                "npm: watch:esbuild"
+            ],
+            "presentation": {
+                "reveal": "never"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "type": "npm",
+            "script": "watch:esbuild",
+            "group": "build",
+            "problemMatcher": [ // Utilise un tableau pour potentiellement en ajouter d'autres
+                {
+                    "owner": "esbuild-watch", // Un nom unique pour ce matcher
+                    "source": "esbuild",    // Associe les problèmes à 'esbuild'
+                    "pattern": [
+                        {
+                            // Expression régulière pour capturer les erreurs d'esbuild
+                            // Format: path/file.ts:line:col: error: message text
+                            "regexp": "^\\s*([^\\s].*?):(\\d+):(\\d+):\\s+(?:error|warning):\\s+(.*)$",
+                            "file": 1,       // Groupe 1 = fichier
+                            "line": 2,       // Groupe 2 = ligne
+                            "column": 3,     // Groupe 3 = colonne
+                            "message": 4     // Groupe 4 = message
+                        }
+                    ],
+                    // Pour les tâches qui tournent en fond (watch)
+                    "background": {
+                        "activeOnStart": true,
+                        // Quand commence une nouvelle compilation en mode watch
+                        "beginsPattern": "^\\[watch\\] build started$",
+                        // Quand la compilation se termine (avec ou sans erreur)
+                        "endsPattern": "^\\[watch\\] build finished(?: \\(.*\\))?$" // Prend en compte le temps optionnel
+                    }
+                }
+            ],
+            "isBackground": true,
+            "label": "npm: watch:esbuild",
+            "presentation": {
+                "group": "watch",
+                "reveal": "never"
+            }
+        },
+		{
+            "type": "npm",
+            "script": "watch:tsc",
+            "group": "build",
+            "problemMatcher": "$tsc-watch",
+            "isBackground": true,
+            "label": "npm: watch:tsc",
+            "presentation": {
+                "group": "watch",
+                "reveal": "never"
+            }
+        },
+		{
+			"type": "npm",
+			"script": "watch-tests",
+			"problemMatcher": "$tsc-watch",
+			"isBackground": true,
+			"presentation": {
+				"reveal": "never",
+				"group": "watchers"
+			},
+			"group": "build"
+		},
+		{
+			"label": "tasks: watch-tests",
+			"dependsOn": [
+				"npm: watch",
+				"npm: watch-tests"
+			],
+			"problemMatcher": []
+		}
+	]
+}

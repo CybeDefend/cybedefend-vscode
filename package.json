@@ -1,0 +1,137 @@
+{
+  "name": "cybedefend-vscode",
+  "displayName": "cybedefend-vscode",
+  "description": "Seamlessly integrates CybeDefend into VSCode, enabling real-time vulnerability scanning of your codebase. Authenticate via API key, auto-install the CLI, and visualize detected issues with severity-based filtering and detailed insights",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.98.2"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:cybexScannerResultsView"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "configuration": [
+      {
+        "title": "Cybex Scanner",
+        "properties": {
+          "cybexScanner.apiBaseUrl": {
+            "type": "string",
+            "default": "http://localhost:3000",
+            "description": "Base URL for the Cybedefend API"
+          },
+          "cybexScanner.projectId": {
+            "type": "string",
+            "default": "",
+            "description": "The Project ID to use for scans (required for starting scans)"
+          }
+        }
+      }
+    ],
+    "commands": [
+      {
+        "command": "cybexScanner.startScan",
+        "title": "Start Vulnerability Scan",
+        "icon": "$(play)"
+      },
+      {
+        "command": "cybexScanner.openSettings",
+        "title": "Open Scanner Settings",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "cybexScanner.selectProjectFolder",
+        "title": "Select Project Folder"
+      },
+      {
+        "command": "cybexScanner.showVulnerabilityDetails",
+        "title": "Show Vulnerability Details"
+      },
+      {
+        "command": "cybexScanner.updateApiKey",
+        "title": "Update API Key"
+      },
+      {
+        "command": "cybexScanner.openFileLocation",
+        "title": "Open File Location"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "cybexScannerViewContainer",
+          "title": "Cybex Scanner",
+          "icon": "$(shield)"
+        }
+      ]
+    },
+    "views": {
+      "cybexScannerViewContainer": [
+        {
+          "id": "cybexScannerResultsView",
+          "name": "Scan Results",
+          "type": "tree",
+          "contextualTitle": "Cybex Scanner"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "cybexScanner.startScan",
+          "when": "view == cybexScannerResultsView && workspaceFolderCount > 0",
+          "group": "navigation@1",
+          "icon": "$(play)"
+        },
+        {
+          "command": "cybexScanner.openSettings",
+          "when": "view == cybexScannerResultsView",
+          "group": "navigation@2",
+          "icon": "$(gear)"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "npm run check-types && npm run lint && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/archiver": "^6.0.3",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.17.30",
+    "@types/sinon": "^17.0.4",
+    "@types/vscode": "^1.99.1",
+    "@typescript-eslint/eslint-plugin": "^8.29.1",
+    "@typescript-eslint/parser": "^8.29.1",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.5.2",
+    "esbuild": "^0.25.1",
+    "eslint": "^9.24.0",
+    "mocha": "^11.1.0",
+    "npm-run-all": "^4.1.5",
+    "sinon": "^20.0.0",
+    "typescript": "^5.8.3",
+    "vsce": "^2.15.0"
+  },
+  "dependencies": {
+    "@types/lodash": "^4.17.16",
+    "archiver": "^7.0.1",
+    "axios": "^1.8.4",
+    "form-data": "^4.0.2",
+    "lodash": "^4.17.21"
+  }
+}
