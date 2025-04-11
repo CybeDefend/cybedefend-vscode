@@ -10,20 +10,20 @@
     "Other"
   ],
   "activationEvents": [
-    "onView:cybexScannerResultsView"
+    "onView:cybedefendScanner.summaryView"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "configuration": [
       {
-        "title": "Cybex Scanner",
+        "title": "CybeDefend scanner",
         "properties": {
-          "cybexScanner.apiBaseUrl": {
+          "cybedefendScanner.apiBaseUrl": {
             "type": "string",
             "default": "http://localhost:3000",
             "description": "Base URL for the Cybedefend API"
           },
-          "cybexScanner.projectId": {
+          "cybedefendScanner.projectId": {
             "type": "string",
             "default": "",
             "description": "The Project ID to use for scans (required for starting scans)"
@@ -33,62 +33,80 @@
     ],
     "commands": [
       {
-        "command": "cybexScanner.startScan",
+        "command": "cybedefendScanner.startScan",
         "title": "Start Vulnerability Scan",
         "icon": "$(play)"
       },
       {
-        "command": "cybexScanner.openSettings",
+        "command": "cybedefendScanner.openSettings",
         "title": "Open Scanner Settings",
         "icon": "$(gear)"
       },
       {
-        "command": "cybexScanner.selectProjectFolder",
+        "command": "cybedefendScanner.selectProjectFolder",
         "title": "Select Project Folder"
       },
       {
-        "command": "cybexScanner.showVulnerabilityDetails",
+        "command": "cybedefendScanner.showVulnerabilityDetails",
         "title": "Show Vulnerability Details"
       },
       {
-        "command": "cybexScanner.updateApiKey",
+        "command": "cybedefendScanner.updateApiKey",
         "title": "Update API Key"
       },
       {
-        "command": "cybexScanner.openFileLocation",
+        "command": "cybedefendScanner.openFileLocation",
         "title": "Open File Location"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "cybexScannerViewContainer",
-          "title": "Cybex Scanner",
-          "icon": "$(shield)"
+          "id": "cybedefendScannerViewContainer",
+          "title": "CybeDefend scanner",
+          "icon": "public/icon.png"
         }
       ]
     },
     "views": {
-      "cybexScannerViewContainer": [
+      "cybedefendScannerViewContainer": [
         {
-          "id": "cybexScannerResultsView",
-          "name": "Scan Results",
-          "type": "tree",
-          "contextualTitle": "Cybex Scanner"
+          "id": "cybedefendScanner.summaryView",
+          "name": "Summary",
+          "type": "webview",
+          "contextualTitle": "Scan Summary"
+        },
+        {
+          "id": "cybedefendScanner.sastView",
+          "name": "Code Vulnerabilities",
+          "type": "webview",
+          "contextualTitle": "Code Vulnerabilities"
+        },
+        {
+          "id": "cybedefendScanner.iacView",
+          "name": "Infrastructure Vulnerabilities",
+          "type": "webview",
+          "contextualTitle": "Infrastructure Vulnerabilities"
+        },
+        {
+          "id": "cybedefendScanner.scaView",
+          "name": "Dependencies Vulnerabilities",
+          "type": "webview",
+          "contextualTitle": "Dependencies Vulnerabilities"
         }
       ]
     },
     "menus": {
       "view/title": [
         {
-          "command": "cybexScanner.startScan",
-          "when": "view == cybexScannerResultsView && workspaceFolderCount > 0",
+          "command": "cybedefendScanner.startScan",
+          "when": "view == 'cybedefendScanner.summaryView'",
           "group": "navigation@1",
           "icon": "$(play)"
         },
         {
-          "command": "cybexScanner.openSettings",
-          "when": "view == cybexScannerResultsView",
+          "command": "cybedefendScanner.openSettings",
+          "when": "view == 'cybedefendScanner.summaryView'",
           "group": "navigation@2",
           "icon": "$(gear)"
         }
@@ -114,7 +132,7 @@
     "@types/mocha": "^10.0.10",
     "@types/node": "^20.17.30",
     "@types/sinon": "^17.0.4",
-    "@types/vscode": "^1.99.1",
+    "@types/vscode": "^1.98.2",
     "@typescript-eslint/eslint-plugin": "^8.29.1",
     "@typescript-eslint/parser": "^8.29.1",
     "@vscode/test-cli": "^0.0.10",

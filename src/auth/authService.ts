@@ -29,11 +29,11 @@ export class AuthService {
 
       if (apiKey) {
         await this.setApiKey(apiKey);
-        vscode.window.showInformationMessage('Cybex Scanner: API Key saved successfully.');
+        vscode.window.showInformationMessage('CybeDefend scanner: API Key saved successfully.');
         return true;
       } else {
         // User cancelled or entered empty string
-        vscode.window.showWarningMessage('Cybex Scanner: API Key is required to perform scans.');
+        vscode.window.showWarningMessage('CybeDefend scanner: API Key is required to perform scans.');
         return false;
       }
     }

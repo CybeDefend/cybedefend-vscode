@@ -22,7 +22,7 @@ export class SettingsWebviewProvider implements vscode.Disposable {
         }
 
         this.panel = vscode.window.createWebviewPanel(
-            'cybexScannerSettings',
+            'cybedefendScannerSettings',
             'Scanner Settings',
             column,
             {

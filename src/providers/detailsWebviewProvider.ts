@@ -1,103 +1,141 @@
-// src/providers/detailsWebviewProvider.ts
+// src/providers/detailsWebviewViewProvider.ts
 import * as vscode from 'vscode';
-import { getDetailsWebviewHtml } from '../ui/webviewContent';
-// Importe le type de *réponse* de l'API, pas le type interne
-import { GetProjectVulnerabilityByIdResponseDto } from '../dtos/result/response/get-project-vulnerability-by-id-response.dto'; // Ajuste chemin
+import { getDetailsWebviewHtml } from '../ui/webviewContent'; // La fonction qui génère le HTML principal
+import { GetProjectVulnerabilityByIdResponseDto } from '../dtos/result/response/get-project-vulnerability-by-id-response.dto';
 import { COMMAND_OPEN_FILE_LOCATION } from '../constants/constants';
+// --- IMPORTER getNonce depuis les utilitaires ---
+import { getNonce } from '../utilities/utils'; // Ajuste le chemin si nécessaire
 
-// Implémente Disposable
-export class DetailsWebviewProvider implements vscode.Disposable {
-    // Garde une map des panels actifs, clé = ID de détection
-    private panels: Map<string, vscode.WebviewPanel> = new Map();
-    private readonly context: vscode.ExtensionContext;
-    private disposables: vscode.Disposable[] = []; // Pour le nettoyage global
+/**
+ * Provider that manages the details panel for vulnerability information
+ * Uses WebviewPanel instead of WebviewView to ensure compatibility with older VS Code versions
+ */
+export class DetailsWebviewViewProvider implements vscode.Disposable {
 
-    constructor(context: vscode.ExtensionContext) {
-        this.context = context;
+    public static readonly viewType = 'cybedefendScannerDetailView'; // ID de la vue (doit correspondre à package.json)
+
+    private _panel?: vscode.WebviewPanel; // Référence au panel webview actif
+    private _currentData?: GetProjectVulnerabilityByIdResponseDto; // Dernières données affichées
+    private readonly _extensionUri: vscode.Uri;
+    private _disposables: vscode.Disposable[] = []; // Pour gérer les listeners
+
+    constructor(private readonly context: vscode.ExtensionContext) {
+        this._extensionUri = context.extensionUri;
+        console.log("[DetailsViewProvider] Initialized.");
     }
 
     /**
-     * Affiche ou révèle le panneau pour une vulnérabilité spécifique.
-     * @param response La réponse complète de l'API Get By ID.
+     * Creates or shows the panel and updates its content
      */
-    public show(response: GetProjectVulnerabilityByIdResponseDto) {
-        const vulnerability = response.vulnerability;
-        const panelId = vulnerability.id; // Utilise l'ID de la détection
-         if (!panelId) {
-             console.error("Cannot show details: Vulnerability detection ID is missing.");
-             vscode.window.showErrorMessage("Cannot show details for this vulnerability (missing ID).");
-             return;
-         }
+    public showPanel() {
+        // Si le panel existe déjà, le mettre en avant
+        if (this._panel) {
+            this._panel.reveal(vscode.ViewColumn.Beside);
+            return;
+        }
 
-        const column = vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.Beside;
-        const existingPanel = this.panels.get(panelId);
+        // Créer un nouveau panel
+        this._panel = vscode.window.createWebviewPanel(
+            DetailsWebviewViewProvider.viewType,
+            'Vulnerability Details',
+            vscode.ViewColumn.Beside, // Afficher dans la colonne à côté de l'éditeur
+            {
+                enableScripts: true,
+                retainContextWhenHidden: true, // Garde le contenu quand caché
+                localResourceRoots: [
+                    vscode.Uri.joinPath(this._extensionUri, 'media'),
+                ]
+            }
+        );
 
-        if (existingPanel) {
-            // Si le panneau existe, le révéler et mettre à jour son contenu
-            existingPanel.reveal(column);
-            existingPanel.webview.html = getDetailsWebviewHtml(response, existingPanel.webview, this.context.extensionUri);
-        } else {
-            // Créer un nouveau panneau
-            const panel = vscode.window.createWebviewPanel(
-                'vulnerabilityDetails', // Type de la webview
-                `Detail: ${vulnerability.vulnerability?.name || panelId}`, // Titre
-                column,
-                {
-                    enableScripts: true,
-                    localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')]
-                }
-            );
+        // Définir le contenu HTML
+        this._panel.webview.html = this._getHtmlForWebview(this._panel.webview);
 
-            panel.webview.html = getDetailsWebviewHtml(response, panel.webview, this.context.extensionUri);
-
-            // Gérer les messages de la webview
-            const messageDisposable = panel.webview.onDidReceiveMessage(
-                message => {
-                    switch (message.command) {
-                        case 'triggerOpenFile':
-                            if (message.filePath && message.lineNumber) {
-                                vscode.commands.executeCommand(COMMAND_OPEN_FILE_LOCATION, message.filePath, message.lineNumber);
-                            } else {
-                                console.warn("Received triggerOpenFile command with missing data:", message);
-                            }
-                            return;
+        // Gestion des messages depuis la Webview
+        this._panel.webview.onDidReceiveMessage(data => {
+            console.log("[DetailsViewProvider] Message received:", data.command);
+            switch (data.command) {
+                case 'triggerOpenFile':
+                    if (data.filePath && typeof data.lineNumber === 'number') {
+                        // Exécute la commande enregistrée dans extension.ts
+                        vscode.commands.executeCommand(COMMAND_OPEN_FILE_LOCATION, data.filePath, data.lineNumber);
+                    } else {
+                         console.warn("Invalid data received for triggerOpenFile:", data);
                     }
-                },
-                undefined,
-                this.context.subscriptions // On peut l'ajouter ici, mais on le gérera surtout via le panel dispose
-            );
+                    return;
+            }
+        }, null, this._disposables);
 
-            // Gérer la fermeture du panneau
-            const disposeDisposable = panel.onDidDispose(() => {
-                this.panels.delete(panelId); // Retirer de notre map
-                 messageDisposable.dispose(); // Nettoyer l'écouteur de message associé
-                 // disposeDisposable.dispose(); // Se dispose lui-même
-                console.log(`Details panel disposed: ${panelId}`);
-            }, null, this.context.subscriptions); // Ajouter aux subscriptions globales
+        // Gestion de la fermeture du panel
+        this._panel.onDidDispose(() => {
+            console.log('[DetailsViewProvider] Panel disposed');
+            this._panel = undefined;
+        }, null, this._disposables);
+    }
 
-            this.panels.set(panelId, panel); // Ajouter le nouveau panel à la map
+    /**
+     * Met à jour le contenu du panel avec de nouvelles données de vulnérabilité.
+     * Crée le panel s'il n'existe pas encore.
+     */
+    public updateContent(response: GetProjectVulnerabilityByIdResponseDto | undefined) {
+        this._currentData = response; // Stocke les nouvelles données
+        
+        // Crée ou montre le panel
+        this.showPanel();
+        
+        if (this._panel) {
+            console.log(`[DetailsViewProvider] Updating panel content for ID: ${response?.vulnerability?.id || 'none'}`);
+            // Assigner le nouvel HTML au webview existant
+            this._panel.webview.html = this._getHtmlForWebview(this._panel.webview);
         }
     }
 
-    // Méthode pour fermer tous les panneaux de détails ou un spécifique
-    public disposePanel(panelId: string): void {
-        const panel = this.panels.get(panelId);
-        panel?.dispose(); // Déclenche onDidDispose
+    /**
+     * Génère le HTML pour la webview.
+     * Utilise les données stockées dans `_currentData`.
+     */
+    private _getHtmlForWebview(webview: vscode.Webview): string {
+        if (this._currentData) {
+            // Utilise la fonction externe pour générer le HTML détaillé
+            return getDetailsWebviewHtml(this._currentData, webview, this._extensionUri);
+        } else {
+            // --- HTML par défaut (quand _currentData est undefined) ---
+            const nonce = getNonce(); // Appel correct ici
+            return `<!DOCTYPE html>
+                 <html lang="en">
+                 <head>
+                     <meta charset="UTF-8">
+                      <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} https:; script-src 'nonce-${nonce}';">
+                     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                     <title>Details</title>
+                      <style>
+                         body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); display: flex; justify-content: center; align-items: center; height: 90vh; text-align: center; padding: 20px; }
+                         .message { color: var(--vscode-descriptionForeground); }
+                         .codicon { vertical-align: middle; margin-right: 5px; } /* Style pour icône optionnelle */
+                     </style>
+                 </head>
+                 <body>
+                     <div class="message">
+                          <p>Select a vulnerability from the list in the 'CybeDefend scanner' view (usually on the left) to see its details here.</p>
+                     </div>
+                     </body>
+                 </html>`;
+        }
     }
 
-    // Méthode requise par l'interface Disposable (pour nettoyer tous les panels lors de la désactivation)
-    public dispose() {
-        console.log("Disposing DetailsWebviewProvider and all active panels.");
-        // Dispose tous les panels actifs
-        this.panels.forEach(panel => {
-            panel.dispose();
-        });
-        this.panels.clear(); // Vide la map
-
-        // Nettoyer les autres disposables si nécessaire (normalement géré par onDidDispose des panels)
-        // while (this.disposables.length) {
-        //     const x = this.disposables.pop();
-        //     if (x) { x.dispose(); }
-        // }
-    }
+     /**
+      * Nettoie les ressources lorsque le provider est disposé par l'extension.
+      */
+     public dispose() {
+         console.log("[DetailsWebviewViewProvider] Disposing provider instance and listeners.");
+         // Nettoyer les listeners
+         this._disposables.forEach(d => d.dispose());
+         this._disposables = [];
+         
+         // Fermer le panel s'il existe
+         if (this._panel) {
+             this._panel.dispose();
+             this._panel = undefined;
+         }
+     }
 }

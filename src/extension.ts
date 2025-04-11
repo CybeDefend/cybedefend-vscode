@@ -2,123 +2,131 @@
 import * as vscode from 'vscode';
 import { ApiService, ScanType } from './api/apiService';
 import { AuthService } from './auth/authService';
-import { ActivityBarProvider } from './providers/activityBarProvider';
 import { SettingsWebviewProvider } from './providers/settingsWebviewProvider';
-import { DetailsWebviewProvider } from './providers/detailsWebviewProvider';
+import { DetailsWebviewViewProvider } from './providers/detailsWebviewProvider';
+import { SummaryViewProvider } from './providers/summaryViewProvider';
+import { SastViewProvider } from './providers/sastViewProvider';
+import { IacViewProvider } from './providers/iacViewProvider';
+import { ScaViewProvider } from './providers/scaViewProvider';
 import { startScanCommand } from './commands/scanCommands';
 import { openSettingsCommand, updateApiKeyCommand } from './commands/settingsCommands';
 import { showVulnerabilityDetailsCommand, openFileLocationCommand } from './commands/detailsCommands';
 import {
-    COMMAND_START_SCAN,
-    COMMAND_OPEN_SETTINGS,
-    COMMAND_SHOW_DETAILS,
-    COMMAND_UPDATE_API_KEY,
-    COMMAND_OPEN_FILE_LOCATION,
-    RESULTS_VIEW_ID
+    COMMAND_START_SCAN, COMMAND_OPEN_SETTINGS, COMMAND_SHOW_DETAILS,
+    COMMAND_UPDATE_API_KEY, COMMAND_OPEN_FILE_LOCATION,
+    VIEW_CONTAINER_ID // ID for the Activity Bar container (e.g., 'cybedefendScannerViewContainer')
 } from './constants/constants';
 import { DetailedVulnerability } from './dtos/result/details';
 
 /**
- * Méthode appelée par VS Code lorsque l'extension est activée
- * (déclenché par les activationEvents dans package.json).
- * @param context Contexte de l'extension fourni par VS Code.
+ * This method is called when the extension is activated.
+ * Activation happens based on the 'activationEvents' defined in package.json.
+ * @param context The extension context provided by VS Code, used for managing disposables and secrets.
  */
 export function activate(context: vscode.ExtensionContext) {
 
-    console.log('[CybexScanner] Activating extension...');
+    console.log('[CybeDefendScanner] Activating extension...');
 
-    // --- 1. Initialisation des Services ---
-    // Services principaux (logique métier, API, authentification)
+    // --- 1. Initialize Services & Providers ---
     const authService = new AuthService(context);
     const apiService = new ApiService(authService);
-
-    // Providers pour les éléments d'UI VS Code
-    const activityBarProvider = new ActivityBarProvider();
     const settingsProvider = new SettingsWebviewProvider(context);
-    const detailsProvider = new DetailsWebviewProvider(context);
+    const detailsViewProvider = new DetailsWebviewViewProvider(context); // For right sidebar/panel
+    const summaryProvider = new SummaryViewProvider(context);
+    const sastProvider = new SastViewProvider(context);
+    const iacProvider = new IacViewProvider(context);
+    const scaProvider = new ScaViewProvider(context);
 
-    // --- 2. Enregistrement des éléments Disposable ---
-    // Tout ce qui doit être nettoyé à la désactivation doit être ajouté ici.
-    // Les Webview Providers gèrent leurs propres panels via leur méthode dispose.
-    context.subscriptions.push(settingsProvider);
-    context.subscriptions.push(detailsProvider);
-    // Si AuthService ou ApiService nécessitent un nettoyage (listeners, etc.),
-    // ajoute une méthode dispose() et décommente les lignes suivantes :
-    // context.subscriptions.push(authService);
-    // context.subscriptions.push(apiService);
+    // --- 2. Register Disposables ---
+    // Add all providers and potentially services if they implement vscode.Disposable
+    context.subscriptions.push(
+        settingsProvider,
+        detailsViewProvider,
+        summaryProvider,
+        sastProvider,
+        iacProvider,
+        scaProvider
+        // authService, // Uncomment if AuthService needs disposal
+        // apiService  // Uncomment if ApiService needs disposal
+    );
 
-
-    // --- 3. Vérification Initiale de la Clé API ---
-    // Lance la vérification sans attendre pour ne pas bloquer l'activation.
-    // Le premier appel API ou commande vérifiera à nouveau si nécessaire.
+    // --- 3. Initial API Key Check ---
+    // Check asynchronously, don't block activation. Errors handled when key is needed.
     authService.ensureApiKeyIsSet().catch(err => {
-         console.warn("[CybexScanner] Initial API Key check failed or was cancelled:", err instanceof Error ? err.message : err);
-     });
+        console.warn("[CybeDefendScanner] Initial API Key check failed or was cancelled:", err instanceof Error ? err.message : err);
+    });
+
+    // --- 4. Register Webview View Providers ---
+    // Register each provider with its unique view ID from package.json
+    const viewProvidersToRegister = [
+        { id: SummaryViewProvider.viewType, provider: summaryProvider }, // e.g., 'cybedefendScanner.summaryView'
+        { id: SastViewProvider.viewType,    provider: sastProvider },    // e.g., 'cybedefendScanner.sastView'
+        { id: IacViewProvider.viewType,     provider: iacProvider },     // e.g., 'cybedefendScanner.iacView'
+        { id: ScaViewProvider.viewType,     provider: scaProvider },     // e.g., 'cybedefendScanner.scaView'
+        { id: DetailsWebviewViewProvider.viewType, provider: detailsViewProvider } // e.g., 'cybedefendScannerDetailView'
+    ];
+
+    viewProvidersToRegister.forEach(({ id, provider }) => {
+        console.log(`[CybeDefendScanner] Registering WebviewViewProvider: ${id}`);
+        context.subscriptions.push(vscode.window.registerWebviewViewProvider(id, provider as vscode.WebviewViewProvider));
+    });
 
 
-    // --- 4. Enregistrement de la Vue Activity Bar ---
-    // Crée et enregistre le TreeDataProvider pour notre vue personnalisée.
-    console.log(`[CybexScanner] Registering TreeView: ${RESULTS_VIEW_ID}`);
-    const treeView = vscode.window.createTreeView(RESULTS_VIEW_ID, {
-         treeDataProvider: activityBarProvider,
-         showCollapseAll: true, // Affiche le bouton "Collapse All"
-         canSelectMany: false  // Sélection unique dans l'arbre
-     });
-     context.subscriptions.push(treeView); // Ajoute la vue aux disposables
-
-
-    // --- 5. Enregistrement des Commandes ---
-    // Lie chaque ID de commande à sa fonction handler importée.
-    // Assure-toi que les IDs ici correspondent à ceux dans package.json et constants.ts
-
-    console.log(`[CybexScanner] Registering command: ${COMMAND_START_SCAN}`);
+    // --- 5. Register Commands ---
+    console.log(`[CybeDefendScanner] Registering command: ${COMMAND_START_SCAN}`);
     context.subscriptions.push(
         vscode.commands.registerCommand(COMMAND_START_SCAN, () => {
-            // Injecte les dépendances nécessaires au handler
-            startScanCommand(context, authService, apiService, activityBarProvider);
+            // Pass all necessary dependencies to the command handler
+            startScanCommand(context, authService, apiService, summaryProvider, sastProvider, iacProvider, scaProvider);
         })
     );
 
-    console.log(`[CybexScanner] Registering command: ${COMMAND_OPEN_SETTINGS}`);
+    console.log(`[CybeDefendScanner] Registering command: ${COMMAND_OPEN_SETTINGS}`);
     context.subscriptions.push(
         vscode.commands.registerCommand(COMMAND_OPEN_SETTINGS, () => {
-            openSettingsCommand(settingsProvider); // Le handler appelle settingsProvider.show()
+            // Assumes openSettingsCommand is defined in settingsCommands.ts
+            // and correctly calls settingsProvider.show()
+            openSettingsCommand(settingsProvider);
         })
     );
 
-    console.log(`[CybexScanner] Registering command: ${COMMAND_UPDATE_API_KEY}`);
+    console.log(`[CybeDefendScanner] Registering command: ${COMMAND_UPDATE_API_KEY}`);
     context.subscriptions.push(
         vscode.commands.registerCommand(COMMAND_UPDATE_API_KEY, () => {
-            updateApiKeyCommand(authService); // Le handler appelle showInputBox + authService.setApiKey
+            // Assumes updateApiKeyCommand is defined in settingsCommands.ts
+            // and correctly calls authService.setApiKey after prompting
+            updateApiKeyCommand(authService);
         })
     );
 
-    console.log(`[CybexScanner] Registering command: ${COMMAND_SHOW_DETAILS}`);
+    console.log(`[CybeDefendScanner] Registering command: ${COMMAND_SHOW_DETAILS}`);
     context.subscriptions.push(
         vscode.commands.registerCommand(COMMAND_SHOW_DETAILS,
             (vulnerabilityData: DetailedVulnerability, inferredType: ScanType | undefined) => {
-                 // La vérification robuste des arguments est maintenant DANS le handler
-                showVulnerabilityDetailsCommand(vulnerabilityData, inferredType, apiService, detailsProvider);
+                // Assumes showVulnerabilityDetailsCommand is defined in detailsCommands.ts
+                // It will receive the data and call detailsViewProvider.updateContent
+                showVulnerabilityDetailsCommand(vulnerabilityData, inferredType, apiService, detailsViewProvider);
             }
         )
     );
 
-    console.log(`[CybexScanner] Registering command: ${COMMAND_OPEN_FILE_LOCATION}`);
+    console.log(`[CybeDefendScanner] Registering command: ${COMMAND_OPEN_FILE_LOCATION}`);
     context.subscriptions.push(
         vscode.commands.registerCommand(COMMAND_OPEN_FILE_LOCATION,
             (filePath: string, lineNumber: number) => {
-                 openFileLocationCommand(filePath, lineNumber); // Le handler gère l'ouverture du fichier
+                // Assumes openFileLocationCommand is defined in detailsCommands.ts
+                openFileLocationCommand(filePath, lineNumber);
             }
         )
     );
 
-    console.log('[CybexScanner] Extension activation complete.');
+    console.log('[CybeDefendScanner] Extension activation complete.');
 }
 
 /**
- * Méthode appelée par VS Code lorsque l'extension est désactivée.
+ * This method is called when the extension is deactivated.
+ * Resources registered in context.subscriptions are automatically disposed.
  */
 export function deactivate() {
-    console.log('[CybexScanner] Deactivating extension.');
-    // Le nettoyage des ressources enregistrées dans context.subscriptions est automatique.
+    console.log('[CybeDefendScanner] Deactivating extension.');
 }

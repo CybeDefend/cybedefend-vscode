@@ -9,6 +9,7 @@ import {
     VulnerabilityPriorityEnum
 } from '../../dtos/result/details'; // Ajuste le chemin si nécessaire
 import { GetProjectVulnerabilitiesResponseDto, ScanProjectInfoDto, CountVulnerabilitiesCountByType } from '../../dtos/result/response/get-project-vulnerabilities-response.dto'; // Ajuste le chemin
+import { GetProjectVulnerabilityByIdResponseDto, VulnerabilityScaMetadataDto } from '../../dtos/result/response/get-project-vulnerability-by-id-response.dto';
 
 // --- Exemples de Données Mock ---
 
@@ -160,6 +161,72 @@ export const mockVulnerabilities: DetailedVulnerability[] = [
     // Exemple Low SAST
     { ...mockSastVuln, id: 'sast-low-1', currentSeverity: VulnerabilitySeverityEnum.LOW, currentPriority: VulnerabilityPriorityEnum.LOW, path: 'src/utils/helpers.ts', vulnerableStartLine: 10, vulnerability: { ...mockSastVuln.vulnerability, id: 'rule-weak-rng', name: 'Weak Random Number Generator', severity: VulnerabilitySeverityEnum.LOW }},
 ];
+
+/**
+ * Crée une réponse DTO détaillée mockée basée sur une vulnérabilité de la liste.
+ * Ajoute des détails supplémentaires qui pourraient ne pas être dans la liste.
+ * @param vulnFromList La vulnérabilité de base provenant de la liste (mockée ou réelle).
+ * @returns Un objet GetProjectVulnerabilityByIdResponseDto mocké.
+ */
+export function createMockDetailsResponse(
+    vulnFromList: DetailedVulnerability
+): GetProjectVulnerabilityByIdResponseDto {
+
+    // Crée une copie profonde pour éviter de modifier l'original
+    const detailedVuln = JSON.parse(JSON.stringify(vulnFromList));
+
+    // Ajoute/Modifie des détails spécifiques qu'on veut voir dans la vue détaillée
+    detailedVuln.contextualExplanation = detailedVuln.contextualExplanation || `This is a more detailed mock explanation for ${detailedVuln.id}. Lorem ipsum dolor sit amet...`;
+
+    if (isSastVulnerabilityMock(detailedVuln)) {
+        // Ajoute plus de data flow ou de snippets si la liste n'en avait pas
+        if (!detailedVuln.dataFlowItems || detailedVuln.dataFlowItems.length < 2) {
+            detailedVuln.dataFlowItems = [
+                ...(detailedVuln.dataFlowItems || []),
+                { id: 'flow-mock-3', nameHighlight: 'processedInput', line: 55, language: 'typescript', code: [{line: 55, content:'const result = process(processedInput);'}], type: 'intermediate', order: 3 },
+                { id: 'flow-mock-4', nameHighlight: 'db.save', line: 60, language: 'typescript', code: [{line: 60, content:'await db.save(result);'}], type: 'sink', order: 4 },
+            ];
+        }
+    } else if (isIacVulnerabilityMock(detailedVuln)) {
+        // Ajoute des détails spécifiques à IAC si nécessaire
+        detailedVuln.scannerType = detailedVuln.scannerType || 'MockIACScanner';
+    } else if (isScaVulnerabilityMock(detailedVuln)) {
+        // Ajoute des détails SCA (ex: plus de références)
+         const scaMeta = detailedVuln.vulnerability as VulnerabilityScaMetadataDto; // Cast sûr ici car on est dans le bon type
+         scaMeta.references = [
+            ...(scaMeta.references || []),
+            { id: 'ref-mock-1', type: 'ADVISORY', url: `https://github.com/advisories/${scaMeta.internalId || 'N/A'}`},
+            { id: 'ref-mock-2', type: 'WEB', url: `https://nvd.nist.gov/vuln/detail/${scaMeta.cve || 'N/A'}`},
+         ];
+    }
+
+    // Ajoute plus d'historique pour le test
+    detailedVuln.historyItems = [
+        ...(detailedVuln.historyItems || []),
+        { id: 'hist-mock-1', type: 'COMMENT', value: 'Investigating this issue further.', date: new Date(Date.now() - 86400000).toISOString(), userId: 'mock-user', user: {id: 'mock-user', firstName:'Mock', lastName: 'User', email:'', picture:''}}
+    ];
+
+
+    // Crée l'objet réponse final
+    const response = new GetProjectVulnerabilityByIdResponseDto(
+        vulnFromList.projectId,
+        vulnFromList.id,
+        detailedVuln // Utilise l'objet détaillé enrichi
+    );
+
+    return response;
+}
+
+// Helpers Type Guard pour les objets mockés (similaire aux vrais type guards)
+function isSastVulnerabilityMock(vuln: any): vuln is SastVulnerabilityDetectionDto {
+    return vuln.vulnerability?.vulnerabilityType === 'sast' || 'dataFlowItems' in vuln;
+}
+function isIacVulnerabilityMock(vuln: any): vuln is IacVulnerabilityDetectionDto {
+     return vuln.vulnerability?.vulnerabilityType === 'iac' && !isSastVulnerabilityMock(vuln) && !isScaVulnerabilityMock(vuln);
+ }
+function isScaVulnerabilityMock(vuln: any): vuln is ScaVulnerabilityWithCvssDto {
+     return vuln.vulnerability?.vulnerabilityType === 'sca' || 'scaDetectedPackage' in vuln;
+ }
 
 // --- Fonction pour créer une réponse mockée ---
 export function createMockVulnerabilitiesResponse(projectId: string): GetProjectVulnerabilitiesResponseDto {
