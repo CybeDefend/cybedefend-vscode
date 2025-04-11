@@ -10,7 +10,7 @@ import {
 } from '../../dtos/result/response/get-project-vulnerability-by-id-response.dto'; // Ajuster chemin
 import { ScanType } from '../../api/apiService'; // Ajuster chemin
 import { getNonce } from '../../utilities/utils'; // Ajuster chemin
-import { getSeverityClass, getCommonAssetUris, getCodiconStyleSheet } from './commonHtmlUtils'; // Importer depuis utils
+import { getSeverityClass, getCommonAssetUris, getCodiconStyleSheet, severityColorMap, severityToIconMap } from './commonHtmlUtils'; // Importer depuis utils
 
 // Type Union based on Response DTO classes
 type ApiVulnerabilityType = VulnerabilitySastDto | VulnerabilityIacDto | VulnerabilityScaDto;
@@ -32,11 +32,11 @@ function isScaVulnerability(vuln: ApiVulnerabilityType): vuln is VulnerabilitySc
 
 function _generateHistoryHtml(historyItems: HistoryItemDto[] | undefined): string {
      if (!historyItems || historyItems.length === 0) {
-        return '<div class="section"><div class="section-title"><span class="codicon codicon-history"></span> History</div><div>No history items available.</div></div>';
+        return '<div class="section"><div class="section-title"><span class="codicon codicon-history"></span> History</div><div style="color: var(--vscode-descriptionForeground); padding-left: 5px;">No history items available.</div></div>';
     }
      const itemsHtml = historyItems.map(item => `
         <div class="history-item">
-            <strong>${escape(item.type)}:</strong> ${escape(item.value)}<br>
+            <strong>${escape(item.type)}:</strong> ${escape(item.value)}
             <small>On ${new Date(item.date).toLocaleString()} ${item.user ? `by ${escape(item.user.firstName)} ${escape(item.user.lastName)}` : ''}</small>
         </div>
     `).join('');
@@ -45,7 +45,7 @@ function _generateHistoryHtml(historyItems: HistoryItemDto[] | undefined): strin
 
 function _generateDataFlowHtml(dataFlowItems: DataFlowItemDto[] | undefined): string {
     if (!dataFlowItems || dataFlowItems.length === 0) {
-        return '<div>No data flow information available.</div>';
+        return '<div style="color: var(--vscode-descriptionForeground); padding-left: 5px;">No data flow information available.</div>';
     }
     const itemsHtml = dataFlowItems.sort((a, b) => a.order - b.order).map(item => `
         <div class="data-flow-item">
@@ -53,37 +53,36 @@ function _generateDataFlowHtml(dataFlowItems: DataFlowItemDto[] | undefined): st
             <pre class="code-block">${item.code.map(l => `<span class="line-number">${l.line}</span> ${escape(l.content)}`).join('\n')}</pre>
         </div>
     `).join('');
-    return `<div class="section"><div class="section-title"><span class="codicon codicon-graph"></span> Data Flow</div>${itemsHtml}</div>`;
+    return itemsHtml;
 }
 
 
 function _generateCodeSnippetsHtml(codeSnippets: CodeSnippetDto[] | undefined): string {
     if (!codeSnippets || codeSnippets.length === 0) {
-        // Ne retourne rien si pas de snippet, la section ne sera pas affichée
-        return '';
+        return '<div style="color: var(--vscode-descriptionForeground); padding-left: 5px;">No code snippets available.</div>';
     }
     const snippetsHtml = codeSnippets.map(snippet => `
         <div class="code-snippet">
             <div class="snippet-header">Lines ${snippet.startLine} - ${snippet.endLine} (Vulnerable: ${snippet.vulnerableStartLine === snippet.vulnerableEndLine ? snippet.vulnerableStartLine : `${snippet.vulnerableStartLine} - ${snippet.vulnerableEndLine}`})</div>
             <pre class="code-block">${snippet.code.map(line => {
                 const isVulnerable = line.line >= snippet.vulnerableStartLine && line.line <= snippet.vulnerableEndLine;
-                return `<span class="line ${isVulnerable ? 'line-vulnerable' : ''}"><span class="line-number">${line.line}</span> <span class="line-content">${escape(line.content)}</span></span>`;
+                return `<span class="line ${isVulnerable ? 'line-vulnerable' : ''}"><span class="line-number">${line.line}</span><span class="line-content">${escape(line.content)}</span></span>`;
              }).join('\n')}</pre>
             ${snippet.fixAnalysis ? `<div class="fix-analysis"><strong>Fix Analysis:</strong> ${escape(snippet.fixAnalysis)}</div>` : ''}
             ${snippet.fixAnalysisDescription ? `<div class="fix-analysis-desc">${escape(snippet.fixAnalysisDescription)}</div>` : ''}
         </div>
     `).join('');
-    return `<div class="section"><div class="section-title"><span class="codicon codicon-code"></span> Code Snippet(s)</div>${snippetsHtml}</div>`;
+    return snippetsHtml;
 }
 
 function _generateScaReferencesHtml(references: VulnerabilityScaReferenceDto[] | undefined): string {
      if (!references || references.length === 0) {
-        return '<div>No references available.</div>';
+        return '<div style="color: var(--vscode-descriptionForeground);">No references available.</div>';
     }
      const refsHtml = references.map(ref => `
-        <li><a href="${escape(ref.url)}" title="${escape(ref.url)}"><span class="codicon codicon-link"></span> ${escape(ref.type)}</a></li>
+        <li><a href="${escape(ref.url)}" title="${escape(ref.url)}"><span class="codicon codicon-link"></span> ${escape(ref.type || 'Link')}</a></li>
     `).join('');
-    return `<div><strong>References:</strong><ul class="references-list">${refsHtml}</ul></div>`;
+    return `<ul class="references-list">${refsHtml}</ul>`;
 }
 
 
@@ -102,7 +101,15 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
 
     const commonMetadata = vulnerabilityObject.vulnerability;
     const title = escape(commonMetadata.name || vulnerabilityObject.id || 'Unknown Vulnerability');
-    const severity = escape(vulnerabilityObject.currentSeverity || 'UNKNOWN');
+    const severity = vulnerabilityObject.currentSeverity || 'UNKNOWN';
+    const severityKey = severity.toUpperCase();
+    const severityIconId = severityToIconMap[severityKey] || 'question';
+    const severityColor = severityColorMap[severityKey] || severityColorMap['UNKNOWN']
+    const severityStyle = `color: ${severityColor}; font-weight: bold;`;
+    const severityClass = getSeverityClass(vulnerabilityObject.currentSeverity);
+    const currentVulnType = commonMetadata.vulnerabilityType as ScanType | undefined;
+
+    // CORRIGÉ: Déclarer les variables avant leur utilisation dans le template
     const description = escape(commonMetadata.description || 'No description available.');
     const recommendation = escape(commonMetadata.howToPrevent || 'No recommendation available.');
     const ruleOrCveId = escape((commonMetadata as VulnerabilityScaMetadataDto).cve || commonMetadata.id || 'N/A');
@@ -111,8 +118,6 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
     const currentPriority = escape(vulnerabilityObject.currentPriority || 'N/A');
     const createdAt = new Date(vulnerabilityObject.createdAt).toLocaleString();
     const updatedAt = new Date(vulnerabilityObject.updateAt).toLocaleString();
-    const severityClass = getSeverityClass(vulnerabilityObject.currentSeverity);
-    const currentVulnType = commonMetadata.vulnerabilityType as ScanType | undefined;
 
     let filePath = 'N/A';
     let lineNumber = 0;
@@ -124,8 +129,11 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
     if (isSastVulnerability(vulnerabilityObject)) {
         filePath = vulnerabilityObject.path || '';
         lineNumber = vulnerabilityObject.vulnerableStartLine || 0;
-        specificDetailsHtml = `
-            ${_generateDataFlowHtml(vulnerabilityObject.dataFlowItems)}
+        specificDetailsHtml += `
+            <div class="section">
+                <div class="section-title"><span class="codicon codicon-graph"></span> Data Flow</div>
+                ${_generateDataFlowHtml(vulnerabilityObject.dataFlowItems)}
+            </div>
             <div class="section">
                 <div class="section-title"><span class="codicon codicon-comment"></span> Contextual Explanation</div>
                 <div class="explanation-content">${escape(vulnerabilityObject.contextualExplanation || 'N/A').replace(/\n/g, '<br>')}</div>
@@ -135,12 +143,17 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
                  <code>${escape(vulnerabilityObject.language || 'N/A')}</code>
             </div>
         `;
-        codeSnippetsHtml = _generateCodeSnippetsHtml(vulnerabilityObject.codeSnippets);
+        codeSnippetsHtml = `
+            <div class="section">
+                 <div class="section-title"><span class="codicon codicon-code"></span> Code Snippet(s)</div>
+                 ${_generateCodeSnippetsHtml(vulnerabilityObject.codeSnippets)}
+            </div>
+        `;
     } else if (isIacVulnerability(vulnerabilityObject)) {
         filePath = vulnerabilityObject.path || '';
         lineNumber = vulnerabilityObject.vulnerableStartLine || 0;
-        const scannerType = (vulnerabilityObject as any).scannerType || 'N/A'; // Use assertion if needed
-        specificDetailsHtml = `
+        const scannerType = (vulnerabilityObject as any).scannerType || 'N/A';
+        specificDetailsHtml += `
             <div class="section">
                 <div class="section-title"><span class="codicon codicon-comment"></span> Contextual Explanation</div>
                 <div class="explanation-content">${escape(vulnerabilityObject.contextualExplanation || 'N/A').replace(/\n/g, '<br>')}</div>
@@ -154,16 +167,21 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
                   <code>${escape(vulnerabilityObject.language || 'N/A')}</code>
              </div>
         `;
-        codeSnippetsHtml = _generateCodeSnippetsHtml(vulnerabilityObject.codeSnippets);
+         codeSnippetsHtml = `
+            <div class="section">
+                 <div class="section-title"><span class="codicon codicon-code"></span> Code Snippet(s)</div>
+                 ${_generateCodeSnippetsHtml(vulnerabilityObject.codeSnippets)}
+            </div>
+        `;
     } else if (isScaVulnerability(vulnerabilityObject)) {
         const scaVuln = vulnerabilityObject as VulnerabilityScaDto;
         const scaPackage = scaVuln.package;
         const scaMetadata = scaVuln.vulnerability;
         const cvssScore = scaVuln.cvssScore;
-        filePath = scaPackage?.fileName || 'Manifest File'; // Provide default text
+        filePath = scaPackage?.fileName || 'Manifest File';
         lineNumber = 0;
 
-        specificDetailsHtml = `
+        specificDetailsHtml += `
             <div class="section">
                 <div class="section-title"><span class="codicon codicon-package"></span> Package Details</div>
                 <div class="package-details">
@@ -186,9 +204,9 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
                 <div class="summary-content">${escape(scaMetadata.summary || 'N/A').replace(/\n/g, '<br>')}</div>
             </div>
         `;
-        codeSnippetsHtml = ''; // No code snippets for SCA
+        codeSnippetsHtml = ''; // Pas de snippets pour SCA
     } else {
-        specificDetailsHtml = `<div class="section"><div class="section-title">Details</div><div>Could not determine vulnerability type. Type: ${commonMetadata.vulnerabilityType}</div></div>`;
+        specificDetailsHtml = `<div class="section"><div class="section-title">Details</div><div>Could not determine vulnerability type. Type: ${escape(commonMetadata.vulnerabilityType || 'Unknown')}</div></div>`;
     }
 
     // --- Construct Final HTML ---
@@ -201,81 +219,333 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
         <link href="${codiconsUri}" rel="stylesheet" />
         <title>Vulnerability Detail</title>
         <style>
+            /* Importe les styles de base et la font-face Codicon */
             ${getCodiconStyleSheet(codiconsFontUri)}
-
-            :root {
-                --detail-padding: 20px;
-                --section-border: 1px solid var(--vscode-editorWidget-border, #CCCCCC);
-                --code-background: rgba(var(--vscode-editor-foreground-rgb), 0.04);
-                --vulnerable-line-background: rgba(var(--vscode-errorForeground-rgb), 0.15);
-                --vulnerable-line-border: 1px solid rgba(var(--vscode-errorForeground-rgb), 0.4);
+            
+            /* Styles pour les lettres de sévérité (copié/adapté depuis findingsHtml) */
+            .severity-icon {
+                flex-shrink: 0;
+                font-size: 0.9em;
+                width: 20px; /* Légèrement plus grand */
+                height: 20px;
+                text-align: center;
+                margin-right: 8px; /* Plus d'espace */
+                font-weight: bold;
+                border-radius: 50%;
+                display: inline-flex; /* Aligner avec le titre */
+                align-items: center;
+                justify-content: center;
+                background-color: rgba(255, 255, 255, 0.08);
+                border: 1px solid currentColor;
+                vertical-align: middle;
+                position: relative;
+                top: -1px; /* Ajustement vertical fin */
             }
 
-            body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); padding: var(--detail-padding); font-size: var(--vscode-font-size); line-height: 1.5; }
-            h1 { color: var(--vscode-editor-foreground); padding-bottom: 10px; margin: 0 0 15px 0; font-size: 1.5em; display: flex; align-items: center; gap: 8px; border-bottom: var(--section-border); }
-            .section { margin-bottom: 25px; }
-            .section-title { font-weight: 600; margin-bottom: 10px; font-size: 1.15em; color: var(--vscode-sideBar-foreground); display: flex; align-items: center; gap: 6px; padding-bottom: 5px; border-bottom: 1px dotted var(--vscode-editorWidget-border); }
+            /* Couleurs de sévérité via variables CSS pour réutilisation */
+            :root {
+                /* CORRIGÉ: Utiliser severityColorMap au lieu de l'enum */
+                --severity-color-critical: ${severityColorMap['CRITICAL']};
+                --severity-color-high: ${severityColorMap['HIGH']};
+                --severity-color-medium: ${severityColorMap['MEDIUM']};
+                --severity-color-low: ${severityColorMap['LOW']};
+                --severity-color-info: ${severityColorMap['INFO']};
+                --severity-color-unknown: ${severityColorMap['UNKNOWN']};
+                
+                /* Variables de style globales */
+                --detail-padding: 20px;
+                --section-spacing: 25px;
+                --section-border-color: var(--vscode-editorWidget-border, #444);
+                --section-title-color: var(--vscode-sideBarTitle-foreground);
+                --code-background: rgba(var(--vscode-editor-foreground-rgb), 0.05);
+                --code-border-color: var(--vscode-panel-border);
+                --vulnerable-line-background: rgba(var(--vscode-errorForeground-rgb), 0.1);
+                --vulnerable-line-border-color: rgba(var(--vscode-errorForeground-rgb), 0.3);
+                --interactive-color: var(--vscode-textLink-foreground, rgb(120, 69, 255));
+                --interactive-hover-color: var(--vscode-textLink-activeForeground);
+                --grid-item-background: rgba(var(--vscode-editorWidget-background-rgb), 0.5);
+                --grid-item-border-color: var(--vscode-editorWidget-border, transparent);
+            }
 
-            /* Severity Badge */
-            .severity { display: inline-block; padding: 4px 12px; border-radius: 15px; font-weight: bold; color: white; margin-bottom: 20px; font-size: .9em; text-transform: uppercase; letter-spacing: 0.5px; }
-            .severity-critical { background-color: var(--severity-color-critical, #D14949); }
-            .severity-high { background-color: var(--severity-color-high, #E17D3A); }
-            .severity-medium { background-color: var(--severity-color-medium, #007ACC); color: white; } /* Ensure contrast */
-            .severity-low { background-color: var(--severity-color-low, #777777); }
-            .severity-info { background-color: var(--severity-color-info, #999999); }
-            .severity-unknown { background-color: var(--severity-color-unknown, #AAAAAA); }
+            body { 
+                font-family: var(--vscode-font-family); 
+                color: var(--vscode-foreground); 
+                padding: var(--detail-padding); 
+                font-size: var(--vscode-font-size); 
+                line-height: 1.6; /* Améliorer lisibilité */
+                background-color: var(--vscode-editor-background); /* Fond éditeur */
+            }
 
-            /* Grid Layout */
-            .grid-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 25px; }
-            .grid-item { background-color: var(--vscode-input-background); padding: 12px; border-radius: 4px; font-size: 0.95em; border: 1px solid var(--vscode-input-border, transparent); }
-            .grid-item strong { display: block; margin-bottom: 6px; color:rgb(120, 69, 255); font-weight: 600; }
-            .grid-item code { font-size: 0.9em; background-color: var(--code-background); padding: 2px 4px; border-radius: 3px; }
+            /* Titre principal */
+            h1 {
+                color: var(--vscode-editor-foreground);
+                padding-bottom: 15px;
+                margin: 0 0 var(--section-spacing) 0;
+                font-size: 1.6em;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                border-bottom: 2px solid ${severityColor}; /* Couleur sévérité pour bordure */
+                font-weight: 600; /* Plus marqué */
+            }
+            h1 .codicon-shield { 
+                font-size: 1.2em; /* Icône plus grande */
+                color: ${severityColor}; /* Couleur sévérité */
+            }
 
-            /* Location */
-            .location { background-color: var(--code-background); padding: 10px; border-radius: 4px; margin-bottom: 5px; border: 1px solid var(--vscode-panel-border); }
-            .location code { font-family: var(--vscode-editor-font-family); background-color: transparent; padding: 0; }
-            .location-link { color:rgb(120, 69, 255); text-decoration: none; cursor: pointer; font-weight: 500; }
-            .location-link:hover { color: var(--vscode-textLink-activeForeground); text-decoration: underline; }
+            /* Structure générale des sections */
+            .section {
+                margin-bottom: var(--section-spacing);
+                padding: 0; /* Padding géré par le contenu */
+                background-color: transparent; /* Pas de fond par défaut */
+                border-radius: 6px;
+                border: none; /* Pas de bordure par défaut */
+                box-shadow: none; /* Pas d'ombre par défaut */
+            }
+            .section-title {
+                font-weight: 600;
+                margin-bottom: 12px;
+                padding-bottom: 8px; 
+                font-size: 1.2em;
+                color: var(--section-title-color);
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                border-bottom: 1px solid var(--section-border-color);
+                background-color: transparent; /* Pas de fond */
+                border-radius: 0; /* Pas de coins arrondis */
+            }
+            .section-title .codicon { 
+                font-size: 1.1em; 
+                color: rgb(120,69,255); /* Couleur accent */
+            }
 
-             /* General Content Styles */
-             .explanation-content, .summary-content, .description-content { padding-left: 5px; } /* Slight indent */
+            /* Grille d'infos (maintenant une section) */
+            .grid-container.section {
+                margin-bottom: var(--section-spacing);
+                background-color: var(--grid-item-background);
+                padding: 18px;
+                border-radius: 6px;
+                border: 1px solid var(--grid-item-border-color);
+            }
+             .grid-container .section-title { /* Style titre spécifique grille */
+                 margin: -18px -18px 15px -18px; /* Ajustement pour sortir du padding */
+                 padding: 10px 18px;
+                 border-bottom: 1px solid var(--section-border-color);
+                 background-color: rgba(var(--vscode-panel-border-rgb), 0.1);
+                 border-radius: 6px 6px 0 0;
+             }
+            .grid-container {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 15px;
+                padding: 0; /* Le padding est sur .grid-container.section */
+            }
+            .grid-item {
+                background-color: transparent; /* Fond fourni par le conteneur */
+                padding: 10px;
+                border-radius: 4px;
+                font-size: 0.95em;
+                border: 1px solid transparent; /* Bordure légère interne? */
+                border-left: 3px solid; 
+                transition: transform 0.1s ease, background-color 0.1s ease;
+            }
+            .grid-item:first-child { border-left-color: ${severityColor}; }
+            .grid-item:not(:first-child) { border-left-color: rgb(120,69,255); }
+            
+            .grid-item:hover {
+                transform: translateY(-1px);
+                background-color: rgba(var(--vscode-list-hoverBackground-rgb), 0.5);
+                /* box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); */
+            }
+            .grid-item strong {
+                display: block;
+                margin-bottom: 6px;
+                color: var(--vscode-descriptionForeground); /* Plus discret */
+                font-weight: 600;
+                font-size: 0.85em;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+            .grid-item code {
+                font-size: 1em;
+                background-color: var(--code-background);
+                padding: 3px 6px;
+                border-radius: 3px;
+                word-break: break-all; 
+            }
 
-            /* Code Blocks & Snippets */
-            pre.code-block { background-color: var(--code-background); padding: 12px; border-radius: 4px; overflow-x: auto; white-space: pre; font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); border: 1px solid var(--vscode-panel-border); margin-top: 8px; }
-            code:not(.grid-item code) { font-family: var(--vscode-editor-font-family); background-color: var(--code-background); padding: .2em .4em; border-radius: 3px; }
-            .line { display: block; } /* Ensure each line is block */
-            .line-number { display: inline-block; width: 3.5em; padding-right: 1em; text-align: right; color: var(--vscode-editorLineNumber-foreground); user-select: none; opacity: 0.7; }
+            /* Section Localisation */
+            .location {
+                 padding: 5px 0; /* Padding vertical uniquement */
+            }
+            .location-link {
+                color: rgb(120,69,255);
+                text-decoration: none;
+                cursor: pointer;
+                font-weight: 600;
+                font-family: var(--vscode-editor-font-family);
+                font-size: 1.1em;
+                display: inline-flex; /* Pour Codicon aligné */
+                align-items: center;
+                gap: 6px;
+                padding: 5px 10px;
+                background-color: var(--code-background);
+                border-radius: 4px;
+                border: 1px solid var(--code-border-color);
+                transition: background-color 0.1s ease, color 0.1s ease;
+            }
+            .location-link:hover {
+                color: var(--interactive-hover-color);
+                background-color: rgba(var(--vscode-textLink-foreground-rgb), 0.1);
+            }
+             .location-link .codicon {
+                 font-size: 1.1em; /* Taille adaptée */
+             }
+
+            /* Contenu textuel */
+            .description-content, .recommendation-content, .explanation-content, .summary-content {
+                padding: 5px 0 5px 5px; /* Padding ajusté */
+                line-height: 1.7;
+            }
+            .description-content code, .recommendation-content code {
+                 font-family: var(--vscode-editor-font-family);
+                 background-color: var(--code-background);
+                 padding: .1em .3em;
+                 border-radius: 3px;
+                 font-size: 0.95em;
+            }
+
+            /* Blocs de code & Snippets */
+            pre.code-block {
+                background-color: var(--code-background);
+                padding: 15px;
+                border-radius: 4px;
+                overflow-x: auto;
+                white-space: pre;
+                font-family: var(--vscode-editor-font-family);
+                font-size: var(--vscode-editor-font-size);
+                border: 1px solid var(--code-border-color);
+                margin-top: 10px;
+                line-height: 1.45; /* Interligne code amélioré */
+            }
+            .line { display: block; }
+            .line-number {
+                display: inline-block;
+                width: 3.5em;
+                padding-right: 1.5em;
+                text-align: right;
+                color: var(--vscode-editorLineNumber-foreground);
+                user-select: none;
+                opacity: 0.6;
+                font-style: italic;
+            }
             .line-content { }
-            .line-vulnerable .line-content { background-color: var(--vulnerable-line-background); display: inline-block; width: calc(100% - 4.5em); /* Adjust based on line number width */ }
-             .line-vulnerable { border-left: var(--vulnerable-line-border); }
+            .line-vulnerable {
+                background-color: var(--vulnerable-line-background);
+                outline: 1px solid var(--vulnerable-line-border-color);
+                outline-offset: -1px;
+                border-radius: 2px; /* Coins légèrement arrondis */
+            }
+            .line-vulnerable .line-number {
+                opacity: 0.9;
+                font-style: normal;
+                font-weight: 600;
+                color: var(--vscode-editorLineNumber-activeForeground);
+            }
 
-            /* Specific Details Sections */
-             .package-details div, .identifiers div { margin-bottom: 5px; }
-             .cvss-score { font-weight: bold; color: var(--vscode-charts-red); } /* Highlight CVSS */
-             ul.references-list { list-style: none; padding-left: 0; margin-top: 8px; }
-             ul.references-list li { margin-bottom: 4px; }
-             ul.references-list a { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; }
-             ul.references-list a .codicon { font-size: 0.9em; }
+            /* Détails Spécifiques (SCA, Data Flow, History) */
+            .package-details, .identifiers {
+                padding-left: 5px;
+            }
+            .package-details div, .identifiers div {
+                margin-bottom: 8px;
+                font-size: 0.95em;
+            }
+            .cvss-score {
+                font-weight: bold;
+                color: var(--severity-color-high);
+                background-color: var(--code-background);
+                padding: 2px 6px;
+                border-radius: 3px;
+            }
+            ul.references-list {
+                list-style: none;
+                padding-left: 5px;
+                margin: 10px 0 0 0;
+            }
+            ul.references-list li {
+                margin-bottom: 6px;
+            }
+            ul.references-list a {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                text-decoration: none;
+                color: rgb(120,69,255);
+                transition: color 0.1s ease;
+                font-size: 0.95em;
+            }
+            ul.references-list a:hover {
+                color: var(--interactive-hover-color);
+                text-decoration: underline;
+            }
+            ul.references-list a .codicon {
+                font-size: 1em;
+            }
 
-            /* Data Flow & History */
-            .data-flow-item, .history-item { margin-bottom: 12px; padding: 12px; background-color: var(--vscode-input-background); border-radius: 4px; border-left: 3px solidrgb(120, 69, 255); }
-            .data-flow-item strong, .history-item strong { display: block; margin-bottom: 5px; font-weight: 600; }
-            .history-item small { color: var(--vscode-descriptionForeground); margin-top: 3px; display: block; }
-            .data-flow-item strong .codicon { font-size: 0.9em; margin-right: 2px; }
+            .data-flow-item, .history-item {
+                margin-bottom: 12px; /* Espacement réduit */
+                padding: 12px 15px;
+                background-color: var(--grid-item-background);
+                border-radius: 4px;
+                border-left: 3px solid rgb(120,69,255);
+                position: relative;
+                overflow: hidden;
+            }
+            .data-flow-item::before {
+                /* Supprimé pour un look plus épuré */
+            }
+            .data-flow-item strong, .history-item strong {
+                display: block;
+                margin-bottom: 8px;
+                font-weight: 600;
+                color: var(--vscode-editor-foreground);
+            }
+            .history-item small {
+                color: var(--vscode-descriptionForeground);
+                margin-top: 5px;
+                display: block;
+                font-size: 0.9em;
+            }
+            .data-flow-item strong .codicon {
+                font-size: 1em;
+                margin-right: 4px;
+                vertical-align: middle;
+            }
 
-            /* Code Snippet Specific */
             .code-snippet { margin-bottom: 15px; }
-            .snippet-header { font-size: 0.9em; color: var(--vscode-descriptionForeground); margin-bottom: 5px; }
-            .fix-analysis { margin-top: 10px; font-weight: bold; }
-            .fix-analysis-desc { font-size: 0.95em; color: var(--vscode-foreground); }
+            .snippet-header {
+                font-size: 0.9em;
+                color: var(--vscode-descriptionForeground);
+                margin-bottom: 8px;
+                padding-left: 5px;
+                border-left: 2px solid var(--section-border-color);
+            }
+            .fix-analysis { margin-top: 12px; font-weight: bold; }
+            .fix-analysis-desc { font-size: 0.95em; color: var(--vscode-foreground); margin-top: 4px; }
 
         </style>
     </head>
     <body>
-        <h1><span class="codicon codicon-shield"></span> ${title}</h1>
-        <div class="severity ${severityClass}">${severity}</div>
-
-        <div class="grid-container">
+        <h1>
+            <span class="severity-icon codicon codicon-${severityIconId}" style="${severityStyle}" title="Severity: ${severity}"></span>
+            <span>${title}</span>
+        </h1>
+        
+        <!-- Grille d'informations générales dans sa propre section stylisée -->
+        <div class="grid-container section">
+             <div class="section-title"><span class="codicon codicon-info"></span> General Information</div>
             <div class="grid-item"><strong>State:</strong> ${currentState}</div>
             <div class="grid-item"><strong>Priority:</strong> ${currentPriority}</div>
             <div class="grid-item"><strong>Detected:</strong> ${createdAt}</div>
@@ -287,12 +557,12 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
         <div class="section">
             <div class="section-title"><span class="codicon codicon-location"></span> Location</div>
             <div class="location">
-                <code>
-                    ${filePath && filePath !== 'N/A' ?
-                        `<a class="location-link" href="#" data-command="openFile" title="Click to open file">${escape(filePath)}${lineNumber > 0 ? `:${lineNumber}` : ''}</a>`
-                        : 'N/A'
-                    }
-                </code>
+                 ${filePath && filePath !== 'N/A' ?
+                    `<a class="location-link" href="#" data-command="openFile" title="Click to open file ${escape(filePath)}">
+                        <span class="codicon codicon-file-code"></span> ${escape(filePath)}${lineNumber > 0 ? `:${lineNumber}` : ''}
+                    </a>`
+                    : '<div style="color: var(--vscode-descriptionForeground); padding-left: 5px;">N/A</div>' // Message si pas de localisation
+                 }
             </div>
         </div>
 
@@ -301,15 +571,15 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
             <div class="description-content">${description.replace(/\n/g, '<br>')}</div>
         </div>
 
-        ${specificDetailsHtml}
-        ${codeSnippetsHtml}
+        ${specificDetailsHtml} 
+        ${codeSnippetsHtml} 
 
         <div class="section">
             <div class="section-title"><span class="codicon codicon-lightbulb"></span> Recommendation</div>
             <div class="recommendation-content">${recommendation.replace(/\n/g, '<br>')}</div>
         </div>
 
-        ${historyHtml}
+        ${historyHtml} 
 
         <script nonce="${nonce}">
             const vscode = acquireVsCodeApi();

@@ -132,9 +132,8 @@ export class DetailsWebviewViewProvider implements vscode.Disposable {
 
      /** Helper to get asset URIs */
      private getAssetUris(webview: vscode.Webview) {
-         // CORRIGÉ: Utiliser les chemins copiés dans dist
-         const codiconsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'codicon.css'));
-         const codiconsFontUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'codicon.ttf'));
+         const codiconsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', '@vscode/codicons', 'dist', 'codicon.css'));
+         const codiconsFontUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', '@vscode/codicons', 'dist', 'codicon.ttf'));
          // Ajoutez ici d'autres URIs si nécessaire (e.g., pour un CSS personnalisé)
          return { codiconsUri, codiconsFontUri };
      }
