@@ -10,7 +10,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onView:cybedefendScanner.summaryView"
+    "onView:cybedefendScanner.summaryView",
+    "onView:cybedefendScanner.chatbotView"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -57,13 +58,23 @@
       {
         "command": "cybedefendScanner.openFileLocation",
         "title": "Open File Location"
+      },
+      {
+        "command": "cybedefendScanner.focusScannerView",
+        "title": "Show Scanner Views",
+        "icon": "$(list-flat)"
+      },
+      {
+        "command": "cybedefendScanner.focusChatbotView",
+        "title": "Show Security Champion",
+        "icon": "$(comment-discussion)"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
           "id": "cybedefendScannerViewContainer",
-          "title": "CybeDefend scanner",
+          "title": "CybeDefend",
           "icon": "public/icon.png"
         }
       ]
@@ -73,43 +84,54 @@
         {
           "id": "cybedefendScanner.summaryView",
           "name": "Summary",
-          "type": "webview",
-          "contextualTitle": "Scan Summary"
+          "type": "webview"
         },
         {
           "id": "cybedefendScanner.sastView",
           "name": "Code Vulnerabilities",
-          "type": "webview",
-          "contextualTitle": "Code Vulnerabilities"
+          "type": "webview"
         },
         {
           "id": "cybedefendScanner.iacView",
           "name": "Infrastructure Vulnerabilities",
-          "type": "webview",
-          "contextualTitle": "Infrastructure Vulnerabilities"
+          "type": "webview"
         },
         {
           "id": "cybedefendScanner.scaView",
           "name": "Dependencies Vulnerabilities",
-          "type": "webview",
-          "contextualTitle": "Dependencies Vulnerabilities"
-        }
+          "type": "webview"
+        },
+         {
+           "id": "cybedefendScanner.chatbotView",
+           "name": "Security Champion",
+           "type": "webview"
+         }
       ]
     },
     "menus": {
       "view/title": [
         {
           "command": "cybedefendScanner.startScan",
-          "when": "view == 'cybedefendScanner.summaryView'",
-          "group": "navigation@1",
-          "icon": "$(play)"
+          "when": "view == 'cybedefendScanner.summaryView' && workspaceFolderCount > 0",
+          "group": "navigation@1"
         },
         {
           "command": "cybedefendScanner.openSettings",
           "when": "view == 'cybedefendScanner.summaryView'",
-          "group": "navigation@2",
-          "icon": "$(gear)"
-        }
+          "group": "navigation@2"
+        },
+         {
+           "command": "cybedefendScanner.focusScannerView",
+           "when": "viewContainer == 'cybedefendScannerViewContainer'",
+           "group": "navigation@5",
+           "alt": "cybedefendScanner.focusChatbotView"
+         },
+         {
+           "command": "cybedefendScanner.focusChatbotView",
+           "when": "viewContainer == 'cybedefendScannerViewContainer'",
+           "group": "navigation@6",
+           "alt": "cybedefendScanner.focusScannerView"
+         }
       ]
     }
   },

@@ -15,6 +15,9 @@ import { GetProjectVulnerabilityByIdResponseDto } from '../dtos/result/response/
 // Importe d'autres DTOs si nécessaire (ex: ScanResponseDto pour getScanStatus)
 import { ScanResponseDto } from '../dtos/security-scanning/response/scan-response.dto';
 import { getApiBaseUrl } from '../utilities/config';
+import { ConversationResponseDto } from '../dtos/ai/response/conversation-response.dto';
+import { AddMessageConversationRequestDto } from '../dtos/ai/request/add-message-conversation-request.dto';
+import { StartConversationRequestDto } from '../dtos/ai/request/start-conversation-request.dto';
 
 // Définir les types de scan valides basés sur tes endpoints
 export type ScanType = 'sast' | 'iac' | 'sca';
@@ -178,6 +181,70 @@ export class ApiService {
              throw error;
          }
      }
+
+     /**
+     * Starts a new AI conversation.
+     * POST /project/{projectId}/ai/conversation/start
+     */
+    async startConversation(requestDto: StartConversationRequestDto): Promise<ConversationResponseDto> {
+        // Assure-toi que projectId est dans le DTO ou récupère-le autrement si nécessaire
+        if (!requestDto.projectId) {
+             throw new Error("Project ID is required to start a conversation.");
+        }
+        const projectId = requestDto.projectId;
+        try {
+             console.log(`Starting AI conversation for project ${projectId}:`, requestDto);
+             // Le body de la requête est directement le DTO (sans le projectId dans le corps si l'endpoint le prend dans l'URL)
+             const body = {
+                 isVulnerabilityConversation: requestDto.isVulnerabilityConversation,
+                 vulnerabilityId: requestDto.vulnerabilityId,
+                 vulnerabilityType: requestDto.vulnerabilityType
+             };
+             const response = await this.axiosInstance.post<ConversationResponseDto>(
+                 `/project/${projectId}/ai/conversation/start`,
+                 body // Envoyer seulement les champs attendus par le Body DTO NestJS
+             );
+             console.log('Start Conversation Response:', response.data);
+             // Supposer que l'API retourne directement ConversationResponseDto
+             // L'endpoint retourne Observable<ConversationResponseDto[] | ErrorDto> - à clarifier si c'est un tableau ou objet unique
+             // On suppose ici que c'est un objet unique pour simplifier
+             if (Array.isArray(response.data)) { // Gérer le cas où c'est un tableau
+                 return response.data[0] || { conversationId: '', messages: [] }; // Prend le premier ou un vide
+             }
+             return response.data;
+        } catch (error) {
+            this.handleApiError(error, 'startConversation');
+            throw error;
+        }
+    }
+
+    /**
+     * Sends a message to continue an existing AI conversation.
+     * POST /project/{projectId}/ai/conversation/{idConversation}/message
+     */
+    async continueConversation(requestDto: AddMessageConversationRequestDto): Promise<ConversationResponseDto> {
+        if (!requestDto.projectId || !requestDto.idConversation) {
+             throw new Error("Project ID and Conversation ID are required to continue a conversation.");
+        }
+        const { projectId, idConversation, message } = requestDto;
+        try {
+             console.log(`Continuing AI conversation ${idConversation} for project ${projectId}`);
+             const body = { message }; // Le body attend juste le message selon l'endpoint
+             const response = await this.axiosInstance.post<ConversationResponseDto>(
+                 `/project/${projectId}/ai/conversation/${idConversation}/message`,
+                 body
+             );
+             console.log('Continue Conversation Response:', response.data);
+             // Même remarque sur la réponse potentiellement tableau
+             if (Array.isArray(response.data)) {
+                 return response.data[0] || { conversationId: idConversation, messages: [] };
+             }
+             return response.data;
+        } catch (error) {
+            this.handleApiError(error, 'continueConversation');
+            throw error;
+        }
+    }
 
 
     // --- Helper pour gérer les erreurs Axios ---
