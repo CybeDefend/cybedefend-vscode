@@ -1,13 +1,13 @@
 // src/providers/settingsWebviewProvider.ts
 import * as vscode from 'vscode';
-import { getSettingsWebviewHtml } from '../ui/webviewContent';
+// MODIFIÉ: Importer depuis le nouveau chemin '/ui/html' (via index.ts)
+import { getSettingsWebviewHtml } from '../ui/html';
 import { COMMAND_UPDATE_API_KEY } from '../constants/constants';
 
-// Implémente l'interface Disposable
 export class SettingsWebviewProvider implements vscode.Disposable {
     private panel: vscode.WebviewPanel | undefined;
     private readonly context: vscode.ExtensionContext;
-    private disposables: vscode.Disposable[] = []; // Pour stocker les écouteurs d'événements
+    private disposables: vscode.Disposable[] = [];
 
     constructor(context: vscode.ExtensionContext) {
         this.context = context;
@@ -27,14 +27,17 @@ export class SettingsWebviewProvider implements vscode.Disposable {
             column,
             {
                 enableScripts: true,
-                localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')],
-                retainContextWhenHidden: true // Garde le contenu en mémoire
+                localResourceRoots: [
+                    // Vous n'avez probablement pas besoin de node_modules ici si vous n'utilisez pas d'icônes/libs JS
+                    vscode.Uri.joinPath(this.context.extensionUri, 'media') // Pour d'éventuelles images/CSS spécifiques
+                ],
+                retainContextWhenHidden: true
             }
         );
 
+        // Utilise la fonction importée depuis ui/html
         this.panel.webview.html = getSettingsWebviewHtml(this.panel.webview, this.context.extensionUri);
 
-        // Gérer les messages
         this.panel.webview.onDidReceiveMessage(
             message => {
                 switch (message.command) {
@@ -44,23 +47,23 @@ export class SettingsWebviewProvider implements vscode.Disposable {
                 }
             },
             undefined,
-            this.disposables // Ajouter les écouteurs aux disposables
+            this.disposables
         );
 
-        // Gérer la fermeture du panneau par l'utilisateur
         this.panel.onDidDispose(() => {
-            this.dispose(); // Appeler notre méthode dispose
-        }, null, this.disposables); // Ajouter l'écouteur aux disposables
+            this.dispose();
+        }, null, this.disposables);
+        // Ajout à context.subscriptions n'est pas nécessaire ici si l'instance
+        // elle-même est ajoutée dans extension.ts
     }
 
-    // Méthode requise par l'interface Disposable
     public dispose() {
-        // Nettoyer les ressources
         if (this.panel) {
-            this.panel.dispose(); // Ferme le panneau Webview
+            // L'appel à panel.dispose() déclenchera aussi le listener onDidDispose ci-dessus
+            this.panel.dispose();
             this.panel = undefined;
         }
-        // Nettoyer tous les écouteurs d'événements enregistrés
+        // Nettoyer les listeners explicitement
         while (this.disposables.length) {
             const x = this.disposables.pop();
             if (x) {
