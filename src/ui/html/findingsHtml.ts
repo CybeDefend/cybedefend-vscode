@@ -252,8 +252,8 @@ export function getFindingsViewHtml(
             .severity-icon { 
                 flex-shrink: 0; 
                 font-size: 0.9em; 
-                width: 18px; 
-                height: 18px;
+                width: 20px; 
+                height: 20px;
                 text-align: center; 
                 margin-right: 5px;
                 font-weight: bold;
