@@ -1,59 +1,73 @@
 // src/api/apiService.ts
 import * as vscode from 'vscode';
-import axios, { AxiosInstance, AxiosError } from 'axios';
+import axios, { AxiosInstance, AxiosError, AxiosRequestHeaders } from 'axios';
 import FormData from 'form-data';
 import * as fs from 'fs';
 import { AuthService } from '../auth/authService';
-
-// --- Import Core DTOs ---
-// Ajuste les chemins si ta structure dans src/dtos/ est différente (ex: src/dtos/index.ts)
 import { StartScanResponseDto } from '../dtos/security-scanning/response/start-scan-response.dto';
-import { GetProjectVulnerabilitiesRequestDto } from '../dtos/result/request/get-project-vulnerabilities-request.dto';
 import { GetProjectVulnerabilitiesResponseDto } from '../dtos/result/response/get-project-vulnerabilities-response.dto';
-import { GetProjectVulnerabilityByIdRequestDto } from '../dtos/result/request/get-project-vulnerability-by-id-request.dto';
 import { GetProjectVulnerabilityByIdResponseDto } from '../dtos/result/response/get-project-vulnerability-by-id-response.dto';
-// Importe d'autres DTOs si nécessaire (ex: ScanResponseDto pour getScanStatus)
 import { ScanResponseDto } from '../dtos/security-scanning/response/scan-response.dto';
 import { getApiBaseUrl } from '../utilities/config';
 import { ConversationResponseDto } from '../dtos/ai/response/conversation-response.dto';
 import { AddMessageConversationRequestDto } from '../dtos/ai/request/add-message-conversation-request.dto';
 import { StartConversationRequestDto } from '../dtos/ai/request/start-conversation-request.dto';
 
-// Définir les types de scan valides basés sur tes endpoints
 export type ScanType = 'sast' | 'iac' | 'sca';
 
+/**
+ * Service for interacting with the CybeDefend backend API.
+ * Handles request authentication and error formatting.
+ */
 export class ApiService {
     private axiosInstance: AxiosInstance;
     private authService: AuthService;
 
+    /**
+     * Creates an instance of ApiService.
+     * @param authService - The authentication service to retrieve the API key.
+     */
     constructor(authService: AuthService) {
         this.authService = authService;
-        const baseURL = getApiBaseUrl(); // Utilise ta fonction pour lire depuis la config
+        const baseURL = getApiBaseUrl();
+        console.log(`[ApiService] Initializing with base URL: ${baseURL}`);
 
         this.axiosInstance = axios.create({
             baseURL: baseURL,
-            headers: {
-                'Content-Type': 'application/json', // Default
-            },
-            // Tu peux ajouter un timeout par défaut ici
-            // timeout: 30000, // 30 seconds
         });
 
-        // Intercepteur pour ajouter le token d'authentification
+        // Axios Request Interceptor to add authentication headers
         this.axiosInstance.interceptors.request.use(
             async (config) => {
                 const apiKey = await this.authService.getApiKey();
+                if (!config.headers) {
+                    config.headers = {} as AxiosRequestHeaders; // Initialize headers object
+                }
+
                 if (apiKey) {
-                    config.headers.Authorization = `Bearer ${apiKey}`;
+                    // **CORRECTION: Add BOTH Authorization and X-API-Key headers**
+                    config.headers['X-API-Key'] = apiKey;
+                    // console.log('[ApiService] Auth headers added (Bearer + X-API-Key)');
+
+                    // Adjust Content-Type only if not FormData
+                    if (!(config.data instanceof FormData)) {
+                        if (!config.headers['Content-Type']) { // Set default if not present
+                            config.headers['Content-Type'] = 'application/json';
+                        }
+                    } else {
+                        // For FormData, remove Content-Type header; library will set it with boundaries
+                        delete config.headers['Content-Type'];
+                    }
                 } else {
-                    // Gérer le cas où la clé API est manquante avant l'appel
-                    console.error('ApiService: API Key is missing for request.');
-                    // Rejeter la promesse pour arrêter la requête
-                    return Promise.reject(new Error('API Key is not configured.'));
+                    // Handle missing API key case
+                    console.error('[ApiService] API Key is missing for request.');
+                    vscode.window.showErrorMessage('API Key is missing or not configured. Please set it via settings.');
+                    return Promise.reject(new Error('API Key is not configured.')); // Reject the request
                 }
                 return config;
             },
             (error) => {
+                console.error('[ApiService] Request Interceptor Error:', error);
                 return Promise.reject(error);
             }
         );
@@ -61,231 +75,224 @@ export class ApiService {
 
     /**
      * Starts a scan by uploading a project archive.
-     * Corresponds to POST /project/{projectId}/scan/start
+     * @param projectId - The ID of the project to scan.
+     * @param zipFilePath - The path to the zip archive of the project.
+     * @returns A promise resolving to the scan start response.
      */
     async startScan(projectId: string, zipFilePath: string): Promise<StartScanResponseDto> {
+        const operation = 'startScan';
+        console.log(`[ApiService] ${operation} called for project ${projectId}`);
         try {
             const formData = new FormData();
-            // Le nom du champ 'scan' doit correspondre à FileInterceptor('scan') dans le contrôleur NestJS
             formData.append('scan', fs.createReadStream(zipFilePath), 'workspace.zip');
 
             const response = await this.axiosInstance.post<StartScanResponseDto>(
                 `/project/${projectId}/scan/start`,
                 formData,
                 {
-                    headers: {
-                        // Important: Laisse Axios définir Content-Type avec les boundaries pour FormData
-                        ...formData.getHeaders(),
-                    },
-                    // Augmenter le timeout pour les uploads potentiellement longs
-                    timeout: 120000 // 2 minutes example
+                    // Headers are handled by the interceptor + FormData library
+                    timeout: 180000 // 3 minutes timeout
                 }
             );
-            // Le contrôleur retourne directement StartScanResponseDto (pas de message, juste success, scanId, languages)
-            // Assure-toi que ton DTO StartScanResponseDto correspond bien à la réponse réelle.
-            // Il semble y avoir une incohérence: le contrôleur retourne { success, scanId, detectedLanguages },
-            // mais ton DTO a { success, message, detectedLanguages }. Adaptes le DTO ou la logique ici.
-            // Supposons que le contrôleur renvoie scanId et que le DTO doit être adapté.
-            // Si le DTO est correct tel quel, la réponse de l'API doit être adaptée.
-            console.log('Start Scan API Response:', response.data);
-            // Temporairement, on crée un objet correspondant au DTO si l'API renvoie différemment
-            // Ceci est à adapter en fonction de la VRAIE réponse API ou en corrigeant le DTO
-             const responseData = response.data as any; // Cast pour accéder aux propriétés potentiellement manquantes
+            console.log(`[ApiService] ${operation} successful:`, response.data);
+             const responseData = response.data as any;
+             // Adapt response based on actual API return vs DTO definition
              return new StartScanResponseDto(
-                 responseData.success ?? false, // Utilise ce que l'API renvoie
-                 responseData.scanId ?? responseData.message ?? 'Scan initiated', // Utilise scanId si présent, sinon message
+                 responseData.success ?? true, // Assume success if not present
+                 responseData.scanId ?? responseData.message ?? 'Scan initiation info missing',
                  responseData.detectedLanguages
              );
-             // return response.data; // Utilise ceci si le DTO correspond PARFAITEMENT à la réponse API
         } catch (error) {
-            this.handleApiError(error, 'startScan');
-            throw error; // Re-throw pour que le command handler puisse le gérer
+            this.handleApiError(error, operation);
+            throw error; // Re-throw for command handler
         }
     }
 
     /**
-     * Gets the list of vulnerabilities for a specific scan type after completion.
-     * Corresponds to GET /project/{projectId}/results/{scanType}
-     * Note: Assumes the same response DTO for SAST, IAC, SCA list views for simplicity here.
-     * You might need separate methods if request/response differs significantly.
+     * Gets the list of vulnerabilities for a specific scan type.
+     * @param projectId - The ID of the project.
+     * @param scanType - The type of scan results to fetch ('sast', 'iac', 'sca').
+     * @param params - Optional parameters for pagination and filtering.
+     * @returns A promise resolving to the vulnerability list response.
      */
     async getScanResults(
         projectId: string,
         scanType: ScanType,
-        // Ajoute des paramètres optionnels pour la pagination/filtres si nécessaire
-        // basés sur GetProjectVulnerabilitiesRequestDto ou GetProjectScaVulnerabilitiesRequestDto
-        params?: { pageNumber?: number; pageSizeNumber?: number; severity?: string[], /* autres filtres...*/ }
+        params?: { pageNumber?: number; pageSizeNumber?: number; severity?: string[] }
     ): Promise<GetProjectVulnerabilitiesResponseDto> {
+        const operation = `getScanResults (${scanType})`;
+        console.log(`[ApiService] ${operation} called for project ${projectId} with params:`, params);
         try {
-            // Adapte les noms de paramètres si nécessaire pour correspondre à l'API (@Query)
              const queryParams = {
-                 pageNumber: params?.pageNumber ?? 1, // Default page 1
-                 pageSizeNumber: params?.pageSizeNumber ?? 100, // Default page size 100
-                 severity: params?.severity, // Pass severity array if provided
-                 // Ajoute d'autres paramètres ici
+                 pageNumber: params?.pageNumber ?? 1,
+                 pageSizeNumber: params?.pageSizeNumber ?? 500, // Fetch more for UI lists
+                 severity: params?.severity,
              };
-
             const response = await this.axiosInstance.get<GetProjectVulnerabilitiesResponseDto>(
                 `/project/${projectId}/results/${scanType}`,
                 { params: queryParams }
             );
-            // Vérifie si la réponse contient bien un tableau 'vulnerabilities'
-            if (!response.data || !Array.isArray(response.data.vulnerabilities)) {
-                 console.warn(`API response for getScanResults (${scanType}) missing 'vulnerabilities' array.`);
-                 // Retourne une structure vide valide pour éviter les erreurs en aval
-                  return { ...response.data, vulnerabilities: [] };
+            console.log(`[ApiService] ${operation} successful. Found ${response.data?.vulnerabilities?.length ?? 0} items.`);
+            // Ensure vulnerabilities array exists, return empty array otherwise
+            if (!response.data?.vulnerabilities) {
+                console.warn(`[ApiService] ${operation} response missing 'vulnerabilities' array.`);
+                 // Create a valid structure if response.data itself is missing
+                 const baseResponse = response.data || { projectId, total: 0, vulnerabilities: [] };
+                 return { ...baseResponse, vulnerabilities: [] };
              }
-
-            console.log(`Get Scan Results (${scanType}) Response: Found ${response.data.vulnerabilities.length} vulnerabilities.`);
             return response.data;
         } catch (error) {
-            this.handleApiError(error, `getScanResults (${scanType})`);
+            this.handleApiError(error, operation);
             throw error;
         }
     }
 
     /**
      * Gets detailed information for a specific vulnerability.
-     * Corresponds to GET /project/{projectId}/results/{scanType}/{vulnerabilityId}
+     * @param projectId - The ID of the project.
+     * @param vulnerabilityId - The ID of the vulnerability.
+     * @param scanType - The type of scan the vulnerability belongs to.
+     * @returns A promise resolving to the detailed vulnerability response.
      */
     async getVulnerabilityDetails(
         projectId: string,
         vulnerabilityId: string,
         scanType: ScanType
     ): Promise<GetProjectVulnerabilityByIdResponseDto> {
+        const operation = `getVulnerabilityDetails (${scanType})`;
+        console.log(`[ApiService] ${operation} called for project ${projectId}, vuln ${vulnerabilityId}`);
         try {
             const response = await this.axiosInstance.get<GetProjectVulnerabilityByIdResponseDto>(
                 `/project/${projectId}/results/${scanType}/${vulnerabilityId}`
             );
-            console.log(`Get Vulnerability Details (${scanType}, ${vulnerabilityId}) Response received.`);
+            console.log(`[ApiService] ${operation} successful.`);
             return response.data;
         } catch (error) {
-            this.handleApiError(error, `getVulnerabilityDetails (${scanType})`);
+            this.handleApiError(error, operation);
             throw error;
         }
     }
 
-    /**
+     /**
       * Gets the status of a specific scan.
-      * Corresponds to GET /project/{projectId}/scan/{scanId}
+      * @param projectId - The ID of the project.
+      * @param scanId - The ID of the scan to check.
+      * @returns A promise resolving to the scan status response.
       */
      async getScanStatus(projectId: string, scanId: string): Promise<ScanResponseDto> {
+         const operation = 'getScanStatus';
+         console.log(`[ApiService] ${operation} called for project ${projectId}, scan ${scanId}`);
          try {
              const response = await this.axiosInstance.get<ScanResponseDto>(
                  `/project/${projectId}/scan/${scanId}`
              );
-             console.log(`Get Scan Status (${scanId}) Response: State is ${response.data.state}`);
+             console.log(`[ApiService] ${operation} successful: State is ${response.data?.state}`);
              return response.data;
          } catch (error) {
-             this.handleApiError(error, 'getScanStatus');
+             this.handleApiError(error, operation);
              throw error;
          }
      }
 
-     /**
-     * Starts a new AI conversation.
-     * POST /project/{projectId}/ai/conversation/start
+    /**
+     * Starts a new AI conversation, potentially with vulnerability context.
+     * @param requestDto - DTO containing necessary info (projectId, context).
+     * @returns A promise resolving to the initial conversation state.
      */
     async startConversation(requestDto: StartConversationRequestDto): Promise<ConversationResponseDto> {
-        // Assure-toi que projectId est dans le DTO ou récupère-le autrement si nécessaire
-        if (!requestDto.projectId) {
-             throw new Error("Project ID is required to start a conversation.");
-        }
+        const operation = 'startConversation';
+        if (!requestDto.projectId) throw new Error(`[ApiService] ${operation} Error: Project ID is required.`);
         const projectId = requestDto.projectId;
+        console.log(`[ApiService] ${operation} called for project ${projectId}`);
         try {
-             console.log(`Starting AI conversation for project ${projectId}:`, requestDto);
-             // Le body de la requête est directement le DTO (sans le projectId dans le corps si l'endpoint le prend dans l'URL)
              const body = {
                  isVulnerabilityConversation: requestDto.isVulnerabilityConversation,
                  vulnerabilityId: requestDto.vulnerabilityId,
                  vulnerabilityType: requestDto.vulnerabilityType
              };
-             const response = await this.axiosInstance.post<ConversationResponseDto>(
+             const response = await this.axiosInstance.post<ConversationResponseDto | ConversationResponseDto[]>(
                  `/project/${projectId}/ai/conversation/start`,
-                 body // Envoyer seulement les champs attendus par le Body DTO NestJS
+                 body
              );
-             console.log('Start Conversation Response:', response.data);
-             // Supposer que l'API retourne directement ConversationResponseDto
-             // L'endpoint retourne Observable<ConversationResponseDto[] | ErrorDto> - à clarifier si c'est un tableau ou objet unique
-             // On suppose ici que c'est un objet unique pour simplifier
-             if (Array.isArray(response.data)) { // Gérer le cas où c'est un tableau
-                 return response.data[0] || { conversationId: '', messages: [] }; // Prend le premier ou un vide
+             console.log(`[ApiService] ${operation} successful.`);
+             // Handle potential array response
+             if (Array.isArray(response.data)) {
+                  console.warn(`[ApiService] ${operation} received an array, returning first element.`);
+                  return response.data[0] || { conversationId: '', messages: [] };
              }
-             return response.data;
+             return response.data && response.data.conversationId ? response.data : { conversationId: '', messages: [] }; // Ensure valid response structure
         } catch (error) {
-            this.handleApiError(error, 'startConversation');
+            this.handleApiError(error, operation);
             throw error;
         }
     }
 
     /**
      * Sends a message to continue an existing AI conversation.
-     * POST /project/{projectId}/ai/conversation/{idConversation}/message
+     * @param requestDto - DTO containing conversation/project IDs and the message.
+     * @returns A promise resolving to the updated conversation state.
      */
     async continueConversation(requestDto: AddMessageConversationRequestDto): Promise<ConversationResponseDto> {
+        const operation = 'continueConversation';
         if (!requestDto.projectId || !requestDto.idConversation) {
-             throw new Error("Project ID and Conversation ID are required to continue a conversation.");
+            throw new Error(`[ApiService] ${operation} Error: Project ID and Conversation ID are required.`);
         }
         const { projectId, idConversation, message } = requestDto;
+        console.log(`[ApiService] ${operation} called for project ${projectId}, conversation ${idConversation}`);
         try {
-             console.log(`Continuing AI conversation ${idConversation} for project ${projectId}`);
-             const body = { message }; // Le body attend juste le message selon l'endpoint
-             const response = await this.axiosInstance.post<ConversationResponseDto>(
+             const body = { message };
+             const response = await this.axiosInstance.post<ConversationResponseDto | ConversationResponseDto[]>(
                  `/project/${projectId}/ai/conversation/${idConversation}/message`,
                  body
              );
-             console.log('Continue Conversation Response:', response.data);
-             // Même remarque sur la réponse potentiellement tableau
+              console.log(`[ApiService] ${operation} successful.`);
              if (Array.isArray(response.data)) {
+                 console.warn(`[ApiService] ${operation} received an array, returning first element.`);
                  return response.data[0] || { conversationId: idConversation, messages: [] };
              }
-             return response.data;
+              return response.data && response.data.conversationId ? response.data : { conversationId: idConversation, messages: [] }; // Ensure valid response structure
         } catch (error) {
-            this.handleApiError(error, 'continueConversation');
+            this.handleApiError(error, operation);
             throw error;
         }
     }
 
-
-    // --- Helper pour gérer les erreurs Axios ---
+    /**
+     * Handles API errors, logging details and creating a user-friendly message.
+     * The error message is updated in place.
+     * @param error - The error object (can be AxiosError or other).
+     * @param operation - A string identifying the operation that failed.
+     */
     private handleApiError(error: any, operation: string): void {
-        let userMessage = `Operation '${operation}' failed.`; // Default message
+        let userMessage = `Operation '${operation}' failed.`;
         if (axios.isAxiosError(error)) {
-            const axiosError = error as AxiosError<any>; // Type avec les données d'erreur potentielles
-            console.error(`Axios Error during ${operation}:`, error.message);
+            const axiosError = error as AxiosError<any>;
+            console.error(`[ApiService] Axios Error during ${operation}:`, error.message);
             if (axiosError.response) {
-                console.error('Response Status:', axiosError.response.status);
-                console.error('Response Data:', axiosError.response.data);
-                // Essayer d'extraire un message d'erreur de l'API si disponible
-                const apiErrorMessage = axiosError.response.data?.message || axiosError.response.data?.error || JSON.stringify(axiosError.response.data);
-                userMessage = `API Error (${axiosError.response.status}) during ${operation}: ${apiErrorMessage}`;
-
-                if (axiosError.response.status === 401) {
-                    userMessage = 'API Authentication Failed: Invalid or missing API Key. Please update it in Settings.';
-                    // On pourrait déclencher une action, comme demander la clé à nouveau
-                    // vscode.commands.executeCommand(COMMAND_UPDATE_API_KEY);
-                } else if (axiosError.response.status === 403) {
-                    userMessage = 'API Authorization Failed: You do not have permission for this project or action.';
-                } else if (axiosError.response.status === 404) {
-                     userMessage = `API Error: Resource not found during ${operation}. Check Project ID or URL.`;
-                 }
+                const status = axiosError.response.status;
+                const data = axiosError.response.data;
+                const apiErrorMessage = data?.message || data?.error || (typeof data === 'object' ? JSON.stringify(data) : data);
+                console.error(`[ApiService] Response Status: ${status}`);
+                console.error(`[ApiService] Response Data:`, data);
+                userMessage = `API Error (${status}) during ${operation}: ${apiErrorMessage || 'No additional details'}`;
+                 if (status === 401) userMessage = 'API Authentication Failed: Invalid or missing API Key/Token.';
+                 else if (status === 403) userMessage = 'API Authorization Failed: Access Denied.';
+                 else if (status === 404) userMessage = `API Error: Resource not found for ${operation}. Check IDs/URL.`;
+                 else if (status === 400) userMessage = `API Error: Invalid Request for ${operation}. ${apiErrorMessage}`;
             } else if (axiosError.request) {
-                console.error('Request Error:', axiosError.request);
-                userMessage = `Network Error during ${operation}: No response received from the server at ${this.axiosInstance.defaults.baseURL}. Please check the URL and your connection.`;
-            } else {
-                userMessage = `Error setting up request for ${operation}: ${error.message}`;
-            }
+                console.error('[ApiService] Request Error: No response received.', axiosError.config?.url);
+                userMessage = `Network Error for ${operation}: No response from server at ${this.axiosInstance.defaults.baseURL}. Check URL/Connection.`;
+            } else { userMessage = `Request Setup Error for ${operation}: ${error.message}`; }
+        } else if (error instanceof Error) {
+            console.error(`[ApiService] Non-Axios Error during ${operation}:`, error);
+            userMessage = `Unexpected Error during ${operation}: ${error.message}`;
         } else {
-            console.error(`Non-Axios Error during ${operation}:`, error);
-             if (error instanceof Error) {
-               userMessage = `Unexpected Error during ${operation}: ${error.message}`;
-             } else {
-                userMessage = `An unexpected error occurred during ${operation}.`;
-             }
+            console.error(`[ApiService] Unknown Error during ${operation}:`, error);
+            userMessage = `An unexpected error occurred during ${operation}.`;
         }
-        // Ne pas montrer d'erreur ici, laisser le Command Handler décider
-        // vscode.window.showErrorMessage(userMessage);
-        // On modifie l'erreur pour inclure le message utilisateur
-         error.message = userMessage;
+        console.error(`[ApiService] Final User Message for ${operation}: ${userMessage}`);
+        // Modify the original error to include the user-friendly message
+        if (error instanceof Error) error.message = userMessage;
+        else error = new Error(userMessage); // Wrap non-errors
     }
 }

@@ -81,7 +81,7 @@ export function getSummaryViewHtml(
         contentHtml = `
             <div class="summary-results">
                 <div class="summary-header">
-                    <h2>${shieldIcon} CybeDefend Scan Results</h2>
+                    <h2>CybeDefend Scan Results</h2>
                     <div class="total-badge" title="Total Vulnerabilities Found">
                          ${bugIcon} ${total} Total
                     </div>

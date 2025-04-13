@@ -3,29 +3,39 @@ import * as vscode from 'vscode';
 import { ApiService } from '../api/apiService';
 import { MessageDto } from '../dtos/ai/response/message.dto';
 import { DetailedVulnerability } from '../dtos/result/details';
-import { getProjectId } from '../utilities/config'; // Pour obtenir le projectId
+import { getProjectId } from '../utilities/config';
 import { ConversationResponseDto } from '../dtos/ai/response/conversation-response.dto';
 import { StartConversationRequestDto } from '../dtos/ai/request/start-conversation-request.dto';
 import { AddMessageConversationRequestDto } from '../dtos/ai/request/add-message-conversation-request.dto';
 import { getChatbotHtml } from '../ui/html/chatbotHtml';
 
-// Interface pour les messages échangés avec la webview
+/**
+ * Interface for messages exchanged between the webview and the provider.
+ */
 interface ChatbotMessage {
-    command: 'sendMessage' | 'loadInitialData' | 'setSelectedVulnerability';
+    command: 'sendMessage' | 'loadInitialData' | 'setSelectedVulnerability' | 'getInitialState';
     text?: string;
-    vulnerability?: DetailedVulnerability | null; // Pour envoyer la vulnérabilité sélectionnée
+    vulnerability?: DetailedVulnerability | null;
 }
 
+/**
+ * Defines the state managed by the provider and sent to the webview.
+ */
 interface WebviewState {
     messages: MessageDto[];
-    isLoading: boolean;
+    isLoading: boolean; // General loading state (e.g., waiting for AI)
+    isVulnListLoading: boolean; // Specific state for loading the vuln list
     error: string | null;
-    vulnerabilities: DetailedVulnerability[]; // Pour la liste de sélection
+    vulnerabilities: DetailedVulnerability[];
     selectedVulnerability: DetailedVulnerability | null;
     conversationId: string | null;
     projectId: string | null;
 }
 
+/**
+ * Provides the "Security Champion" chatbot webview view.
+ * Manages conversation state, vulnerability context, and API interaction.
+ */
 export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
 
     public static readonly viewType = 'cybedefendScanner.chatbotView';
@@ -35,30 +45,44 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
     private _disposables: vscode.Disposable[] = [];
     private _apiService: ApiService;
 
-    // État interne de la vue
+    // Internal state of the view
     private _state: WebviewState = {
         messages: [],
         isLoading: false,
+        isVulnListLoading: false,
         error: null,
         vulnerabilities: [],
         selectedVulnerability: null,
         conversationId: null,
-        projectId: getProjectId() || null // Récupérer le projectId au démarrage et s'assurer qu'il est string | null
+        projectId: getProjectId() || null
     };
 
+    /**
+     * Creates an instance of ChatbotViewProvider.
+     * @param context - The extension context.
+     * @param apiService - The ApiService instance for backend communication.
+     */
     constructor(
         private readonly context: vscode.ExtensionContext,
-        apiService: ApiService // Injecter ApiService
+        apiService: ApiService
     ) {
         this._extensionUri = context.extensionUri;
         this._apiService = apiService;
         console.log("[ChatbotViewProvider] Initialized.");
         if (!this._state.projectId) {
-            console.warn("[ChatbotViewProvider] Project ID not configured, chatbot features might be limited.");
-            // Peut-être afficher un message dans la vue ?
+            console.warn("[ChatbotViewProvider] Project ID not configured.");
+            this._state.error = "Project ID not configured in settings. Vulnerability context may be unavailable.";
+            // No need to update webview yet, resolveWebviewView will do it.
         }
     }
 
+    /**
+     * Called by VS Code when the view needs to be resolved.
+     * Sets up the webview properties, HTML content, and message listeners.
+     * @param webviewView - The webview view instance being resolved.
+     * @param context - Information about the state in which the view is being resolved.
+     * @param _token - A cancellation token for the operation.
+     */
     resolveWebviewView(
         webviewView: vscode.WebviewView,
         context: vscode.WebviewViewResolveContext<unknown>,
@@ -71,191 +95,212 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
             enableScripts: true,
             localResourceRoots: [
                  vscode.Uri.joinPath(this._extensionUri, 'node_modules'),
-                 vscode.Uri.joinPath(this._extensionUri, 'media') // Si nécessaire
+                 vscode.Uri.joinPath(this._extensionUri, 'media') // If needed
             ]
         };
 
-        // Définir le HTML initial et mettre à jour l'état
-        this._updateWebview();
+        // Initial HTML load
+        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
-        // Listeners
-        const messageSubscription = webviewView.webview.onDidReceiveMessage(async (message: ChatbotMessage) => {
-            console.log("[ChatbotViewProvider] Message received:", message.command);
-            switch (message.command) {
-                case 'sendMessage':
-                    if (message.text) {
-                        await this._handleSendMessage(message.text);
-                    }
-                    return;
-                case 'loadInitialData':
-                     // Charger la liste des vulnérabilités SAST/IAC
-                     await this._loadVulnerabilities();
-                     // Pas besoin de renvoyer un message ici, _loadVulnerabilities met à jour l'état et la vue
-                    return;
-                 case 'setSelectedVulnerability':
-                     this._state.selectedVulnerability = message.vulnerability ?? null;
-                     console.log("Selected Vulnerability:", this._state.selectedVulnerability?.id);
-                     // Mettre à jour la vue pour refléter la sélection (optionnel)
-                     this._updateWebview(); // Pourrait rafraîchir l'UI pour montrer la sélection
-                     return;
-            }
-        });
+        // Cleanup previous listeners
+        while (this._disposables.length) { this._disposables.pop()?.dispose(); }
 
+        // Handle messages from the webview
+        const messageSubscription = webviewView.webview.onDidReceiveMessage(
+            async (message: ChatbotMessage) => this._handleWebviewMessage(message),
+            undefined,
+            this._disposables // Add listener to disposables
+        );
+
+        // Handle view disposal
         const disposeSubscription = webviewView.onDidDispose(() => {
-            console.log('[ChatbotViewProvider] Disposed.');
-            if (this._view === webviewView) { this._view = undefined; }
-            messageSubscription.dispose();
-            disposeSubscription.dispose();
-            this._disposables = this._disposables.filter(d => d !== messageSubscription && d !== disposeSubscription);
-        });
+            console.log('[ChatbotViewProvider] Webview disposed.');
+            if (this._view === webviewView) this._view = undefined;
+            // No need to dispose message/dispose listeners here, they are in _disposables
+        }, null, this._disposables); // Also add this listener to disposables
 
-        this._disposables.push(messageSubscription, disposeSubscription);
-
-         // Charger les données initiales (liste de vulnérabilités) quand la vue est prête
-         webviewView.webview.postMessage({ command: 'askForInitialData' }); // Demande au script de renvoyer 'loadInitialData'
+        // Trigger initial data load *after* listeners are set up
+        // The script now asks for initial state when ready
+        // webviewView.webview.postMessage({ command: 'askForInitialState' }); // Consider using postMessage readiness instead
+        console.log("[ChatbotViewProvider] Webview view resolved.");
     }
 
-    // --- Logique Métier ---
-
-    private async _handleSendMessage(text: string): Promise<void> {
-        if (this._state.isLoading || !this._state.projectId) return; // Empêcher envois multiples ou sans projet
-
-        this._state.isLoading = true;
-        this._state.error = null;
-        // Ajoute le message utilisateur immédiatement (pour réactivité)
-        this._state.messages.push({ role: 'user', content: text, createdAt: new Date() });
-        this._updateWebview(); // Met à jour l'UI avec le message utilisateur
-
-        try {
-            let response: ConversationResponseDto;
-            if (this._state.conversationId) {
-                // Continuer la conversation
-                const request = new AddMessageConversationRequestDto(
-                    this._state.conversationId,
-                    text,
-                    this._state.projectId
-                );
-                response = await this._apiService.continueConversation(request);
-            } else {
-                // Démarrer une nouvelle conversation (avec ou sans contexte vulnérabilité)
-                 const isContextual = !!this._state.selectedVulnerability;
-                 const request = new StartConversationRequestDto({
-                     projectId: this._state.projectId,
-                     isVulnerabilityConversation: isContextual,
-                     vulnerabilityId: isContextual ? this._state.selectedVulnerability?.id : undefined,
-                     // Déterminer le type SAST/IAC de la vulnérabilité sélectionnée
-                      vulnerabilityType: isContextual ? (this._state.selectedVulnerability?.vulnerability.vulnerabilityType === 'sast' ? 'sast' : 'iac') : undefined
-                 });
-                 // Envoyer le premier message dans le cadre du démarrage si l'API le permet
-                 // Sinon, il faudra peut-être appeler start puis continue ? Ici on suppose que start peut prendre le 1er message
-                 // Si l'API start ne prend pas de message, il faudrait adapter :
-                 // 1. Call startConversation (sans message)
-                 // 2. Récupérer l'ID
-                 // 3. Call continueConversation avec le message 'text'
-                 // Actuellement, l'API semble séparer start et continue. Appelons start, puis continue.
-
-                 // Appel 1: Start (pour obtenir l'ID et potentiellement une réponse initiale si vulnérabilité liée)
-                  const startResponse = await this._apiService.startConversation(request);
-                  this._state.conversationId = startResponse.conversationId;
-                  // Ajouter les messages initiaux de l'IA si l'API en renvoie au démarrage
-                  if (startResponse.messages && startResponse.messages.length > 0) {
-                       this._state.messages.push(...startResponse.messages);
-                  }
-
-                  // Appel 2: Continue (pour envoyer le message utilisateur)
-                  const continueRequest = new AddMessageConversationRequestDto(
-                     this._state.conversationId,
-                     text,
-                     this._state.projectId
-                  );
-                  response = await this._apiService.continueConversation(continueRequest);
-
-            }
-
-            // Mettre à jour la liste de messages avec la réponse complète de l'IA
-             // Assumons que la réponse contient TOUS les messages de la conversation
-             // ou juste le dernier ? Si juste le dernier : this._state.messages.push(response.messages[response.messages.length-1])
-             // Ici on suppose qu'elle contient au moins le dernier message de l'IA
-            if (response.messages && response.messages.length > 0) {
-                // Pour éviter les doublons, on pourrait filtrer ou simplement ajouter le dernier
-                 const lastAiMessage = response.messages[response.messages.length - 1];
-                 if (lastAiMessage && lastAiMessage.role !== 'user') { // S'assurer qu'on ajoute bien la réponse IA
-                     // Trouve l'index du message utilisateur qu'on a ajouté localement
-                      const userMsgIndex = this._state.messages.findIndex(m => m.role === 'user' && m.content === text && !m.createdAt); // Trouver le message temporaire
-                      if (userMsgIndex !== -1) {
-                          this._state.messages[userMsgIndex].createdAt = new Date(); // Marquer comme "envoyé"
-                      }
-                     this._state.messages.push(lastAiMessage);
-                 } else {
-                     // Si la réponse ne contient pas de nouveau message IA, logguer
-                     console.warn("Continue conversation didn't return a new AI message.");
-                 }
-            }
-            this._state.conversationId = response.conversationId; // Mettre à jour au cas où
-
-        } catch (error: any) {
-            console.error("Error during AI conversation:", error);
-            this._state.error = error.message || "Failed to communicate with the Security Champion.";
-            // Retirer le message utilisateur "optimiste" si l'envoi échoue ? Ou le marquer comme échoué ?
-             const userMsgIndex = this._state.messages.findIndex(m => m.role === 'user' && m.content === text && !m.createdAt);
-             if (userMsgIndex !== -1) this._state.messages[userMsgIndex].content += " (Error Sending)";
-        } finally {
-            this._state.isLoading = false;
-            // Réinitialiser la vulnérabilité sélectionnée après l'envoi du message contextuel ? A discuter.
-             // this._state.selectedVulnerability = null;
-            this._updateWebview(); // Mettre à jour l'UI finale
+    /**
+     * Handles messages received from the webview's JavaScript.
+     * @param message - The message object from the webview.
+     */
+    private async _handleWebviewMessage(message: ChatbotMessage): Promise<void> {
+        console.log("[ChatbotViewProvider] Message received:", message.command);
+        switch (message.command) {
+            case 'sendMessage':
+                if (message.text) {
+                    await this._handleSendMessage(message.text);
+                } else {
+                    console.warn("[ChatbotViewProvider] sendMessage received without text.");
+                }
+                return;
+            case 'loadInitialData': // Triggered by the webview script on load
+                 await this._loadVulnerabilities();
+                return;
+             case 'getInitialState': // Triggered by webview script asking for current state
+                 this._notifyWebviewState();
+                 return;
+             case 'setSelectedVulnerability':
+                 this._state.selectedVulnerability = message.vulnerability ?? null;
+                 console.log("[ChatbotViewProvider] State updated - Selected Vulnerability:", this._state.selectedVulnerability?.id);
+                 // Optionally notify webview if UI needs immediate feedback on selection change
+                 // this._notifyWebviewState();
+                 return;
         }
     }
 
-     private async _loadVulnerabilities(): Promise<void> {
+    /**
+     * Handles sending a message to the AI service (starting or continuing conversation).
+     * @param text - The user's message text.
+     */
+    private async _handleSendMessage(text: string): Promise<void> {
+        if (this._state.isLoading) {
+             console.warn("[ChatbotViewProvider] Send message blocked: Already processing a message.");
+             vscode.window.showWarningMessage("Please wait for the current response before sending another message.");
+             return;
+        }
+        if (!this._state.projectId) {
+            this._state.error = "Cannot send message: Project ID is not configured.";
+            this._notifyWebviewState();
+            return;
+        }
+
+        this._state.isLoading = true;
+        this._state.error = null;
+        // Add user message optimistically
+        const userMessage: MessageDto = new MessageDto('user', text, new Date());
+        this._state.messages.push(userMessage);
+        this._notifyWebviewState(); // Update UI immediately
+
+        try {
+            let response: ConversationResponseDto;
+            const isContextual = !!this._state.selectedVulnerability;
+
+            if (this._state.conversationId) {
+                // Continue existing conversation
+                console.log(`[ChatbotViewProvider] Continuing conversation ${this._state.conversationId}`);
+                const request = new AddMessageConversationRequestDto(
+                    this._state.conversationId, text, this._state.projectId
+                );
+                response = await this._apiService.continueConversation(request);
+            } else {
+                // Start new conversation
+                console.log(`[ChatbotViewProvider] Starting new conversation. Contextual: ${isContextual}`);
+                const startRequest = new StartConversationRequestDto({
+                    projectId: this._state.projectId,
+                    isVulnerabilityConversation: isContextual,
+                    vulnerabilityId: isContextual ? this._state.selectedVulnerability?.id : undefined,
+                    vulnerabilityType: isContextual ? (this._state.selectedVulnerability?.vulnerability.vulnerabilityType === 'sast' ? 'sast' : 'iac') : undefined
+                });
+
+                 // Call start, then continue (assuming start doesn't take the first message)
+                 const startResponse = await this._apiService.startConversation(startRequest);
+                 this._state.conversationId = startResponse.conversationId;
+                 this._state.messages = startResponse.messages || []; // Replace messages if API provides history on start
+                 this._state.messages.push(userMessage); // Re-add user message after potential history load
+
+                 // Send the user's first message via continueConversation
+                 const continueRequest = new AddMessageConversationRequestDto(this._state.conversationId, text, this._state.projectId);
+                 response = await this._apiService.continueConversation(continueRequest);
+            }
+
+            // Process response: Add AI message(s)
+             if (response.messages && response.messages.length > 0) {
+                 // Find messages in response newer than the last known message, or just add the last one if structure is guaranteed
+                  const lastKnownMsgTimestamp = this._state.messages.length > 0 ? this._state.messages[this._state.messages.length - 1].createdAt.getTime() : 0;
+                  const newAiMessages = response.messages.filter(m => m.role !== 'user' && new Date(m.createdAt).getTime() > lastKnownMsgTimestamp);
+
+                 if(newAiMessages.length > 0) {
+                      this._state.messages.push(...newAiMessages);
+                 } else {
+                      console.warn("[ChatbotViewProvider] Continue conversation response did not contain new AI messages.");
+                      // Handle case where only conversationId might be updated?
+                 }
+             } else {
+                 console.warn("[ChatbotViewProvider] Continue conversation response messages array is empty or missing.");
+             }
+             this._state.conversationId = response.conversationId; // Ensure conversation ID is up-to-date
+
+        } catch (error: any) {
+            console.error("[ChatbotViewProvider] Error during AI conversation:", error);
+            this._state.error = error.message || "Failed to communicate with the Security Champion.";
+            // Mark user message as failed (optional UI feedback)
+            const failedUserMsg = this._state.messages.find(m => m === userMessage);
+            if(failedUserMsg) failedUserMsg.content += " (Sending failed)";
+
+        } finally {
+            this._state.isLoading = false;
+            // Optionally clear selected vulnerability after it's used for context
+            // if (isContextual) this._state.selectedVulnerability = null;
+            this._notifyWebviewState(); // Update UI with final state
+        }
+    }
+
+    /**
+     * Loads SAST and IaC vulnerabilities for the context selector dropdown.
+     */
+    private async _loadVulnerabilities(): Promise<void> {
          if (!this._state.projectId) {
              this._state.error = "Project ID is not set. Cannot load vulnerabilities.";
-             this._updateWebview();
+             this._notifyWebviewState();
              return;
          }
-         this._state.isLoading = true;
-         this._state.error = null;
-         this._updateWebview();
+         if(this._state.isVulnListLoading) return; // Prevent concurrent loads
+
+         console.log("[ChatbotViewProvider] Loading vulnerabilities for context...");
+         this._state.isVulnListLoading = true;
+         this._state.error = null; // Clear previous errors
+         this._notifyWebviewState(); // Show loading specifically for vuln list?
 
          try {
+             // Fetch in parallel
              const [sastResults, iacResults] = await Promise.all([
-                 this._apiService.getScanResults(this._state.projectId, 'sast', { pageSizeNumber: 500 }), // Taille max ?
-                 this._apiService.getScanResults(this._state.projectId, 'iac', { pageSizeNumber: 500 })
+                 this._apiService.getScanResults(this._state.projectId, 'sast', { pageSizeNumber: 500 }).catch(e => { console.error("Failed to load SAST", e); return null; }),
+                 this._apiService.getScanResults(this._state.projectId, 'iac', { pageSizeNumber: 500 }).catch(e => { console.error("Failed to load IAC", e); return null; })
              ]);
+
+             // Combine results, filter out nulls if fetches failed
              this._state.vulnerabilities = [
                  ...(sastResults?.vulnerabilities || []),
                  ...(iacResults?.vulnerabilities || [])
-             ];
-             console.log(`Loaded ${this._state.vulnerabilities.length} SAST/IaC vulnerabilities for chatbot context.`);
-         } catch (error: any) {
-             console.error("Failed to load vulnerabilities for chatbot:", error);
-             this._state.error = "Failed to load vulnerabilities for context selection.";
-             this._state.vulnerabilities = [];
+             ].filter(v => v != null); // Filter out potential nulls if one fetch failed
+
+             console.log(`[ChatbotViewProvider] Loaded ${this._state.vulnerabilities.length} SAST/IaC vulnerabilities.`);
+         } catch (error: any) { // Catch errors not handled by individual catches
+             console.error("[ChatbotViewProvider] Failed to load vulnerabilities:", error);
+             this._state.error = "Failed to load vulnerabilities list.";
+             this._state.vulnerabilities = []; // Ensure it's empty on error
          } finally {
-             this._state.isLoading = false;
-             this._updateWebview();
+             this._state.isVulnListLoading = false;
+             this._notifyWebviewState(); // Send updated list (or error state) to webview
          }
      }
 
-    /** Met à jour le contenu HTML de la webview avec l'état actuel */
-    private _updateWebview() {
+    /**
+     * Sends the current state to the webview.
+     */
+    private _notifyWebviewState() {
         if (this._view) {
+            this._view.webview.postMessage({ command: 'updateState', state: this._state });
+            // Also update HTML directly as fallback / initial load mechanism
             this._view.webview.html = this._getHtmlForWebview(this._view.webview);
         }
     }
 
-    /** Génère le HTML pour la webview du chatbot */
+    /** Generates the HTML for the webview using the current state */
     private _getHtmlForWebview(webview: vscode.Webview): string {
-        // Appeler la future fonction getChatbotHtml
         return getChatbotHtml(webview, this.context.extensionUri, this._state);
     }
 
-    /** Nettoie les ressources */
+    /** Cleans up resources */
     dispose() {
         console.log("[ChatbotViewProvider] Disposing.");
-        while (this._disposables.length) {
-            this._disposables.pop()?.dispose();
-        }
+        while (this._disposables.length) { this._disposables.pop()?.dispose(); }
         this._view = undefined;
     }
 }
