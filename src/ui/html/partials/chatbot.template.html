@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="{{cspPolicy}}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="{{codiconsUri}}" rel="stylesheet" />
+    <title>Security Champion</title>
+    <style nonce="{{nonce}}">
+        {{styles}}
+    </style>
+</head>
+<body>
+    <div id="chat-container">
+
+        <div id="vuln-selector" class="hidden">
+            <h4><span class="codicon codicon-link"></span> Link Vulnerability (Optional)</h4>
+            <select id="vuln-select">
+                <option value="">Loading vulnerabilities...</option>
+            </select>
+        </div>
+
+        <div id="messages">
+            <p style="text-align:center; color: var(--vscode-descriptionForeground);">Initializing chat...</p>
+        </div>
+
+        <div id="input-area">
+            <textarea id="message-input" rows="1" placeholder="Ask the Security Champion..." maxlength="512"></textarea>
+            <button id="send-button" title="Send Message" disabled>
+                <span class="codicon codicon-send"></span>
+            </button>
+        </div>
+
+    </div>
+
+    <script type="module" nonce="{{nonce}}">
+        // Pass initial state data from the extension to the script
+        const initialData = JSON.parse('{{initialStateJson}}');
+        const initialFullVulnerabilities = JSON.parse('{{fullVulnerabilitiesDataJson}}');
+
+        // Embed the main script logic
+        {{script}}
+    </script>
+</body>
+</html>
