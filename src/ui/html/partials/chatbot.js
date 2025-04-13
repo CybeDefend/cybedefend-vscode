@@ -123,7 +123,17 @@
             return;
         }
 
-        (messages || []).forEach(function(msg) {
+        // Ensure messages are displayed in chronological order (oldest first)
+        const messagesToRender = [...(messages || [])].sort((a, b) => {
+            // Sort by createdAt timestamp if available
+            if (a.createdAt && b.createdAt) {
+                return new Date(a.createdAt) - new Date(b.createdAt);
+            }
+            // Fall back to original order if no timestamps
+            return 0;
+        });
+
+        messagesToRender.forEach(function(msg) {
             const msgEl = document.createElement('div');
             const alignClass = msg.role === 'user' ? 'message-user' : 'message-ai';
             const icon = msg.role === 'user' ? 'codicon-account' : 'codicon-hubot';
