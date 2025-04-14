@@ -14,6 +14,7 @@
     const messagesDiv = document.getElementById('messages');
     const vulnSelect = document.getElementById('vuln-select');
     const vulnSelectorDiv = document.getElementById('vuln-selector');
+    const resetButton = document.getElementById('reset-button');
 
     // --- Local State Variables ---
     // Initialize state from data injected via the HTML template
@@ -244,6 +245,19 @@
         vscode.postMessage({ command: 'setSelectedVulnerability', vulnerability: null });
     }
 
+    /** Handles resetting the conversation */
+    function handleResetConversation() {
+        if (currentState.isLoading) return; // Don't reset while loading
+        
+        console.log('[Chatbot Webview] Resetting conversation');
+        vscode.postMessage({ command: 'resetConversation' });
+        
+        // Clear the input and vulnerability selection
+        if (messageInput) messageInput.value = '';
+        if (vulnSelect) vulnSelect.value = '';
+        if (sendButton) sendButton.disabled = true;
+    }
+
 
     // --- Event Listeners Setup ---
 
@@ -261,6 +275,13 @@
         });
     } else {
         console.error("Chatbot input/button elements not found!");
+    }
+
+    // Reset Button
+    if (resetButton) {
+        resetButton.addEventListener('click', handleResetConversation);
+    } else {
+        console.error("Reset button element not found!");
     }
 
     // Vulnerability Select Dropdown

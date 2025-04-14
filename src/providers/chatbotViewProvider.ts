@@ -14,7 +14,7 @@ import { getChatbotHtml, VulnerabilityInfoForWebview } from '../ui/html/chatbotH
  * Interface for messages exchanged between the webview and the provider.
  */
 interface ChatbotMessage {
-    command: 'sendMessage' | 'loadInitialData' | 'setSelectedVulnerability' | 'getInitialState';
+    command: 'sendMessage' | 'loadInitialData' | 'setSelectedVulnerability' | 'getInitialState' | 'resetConversation';
     text?: string;
     /** Can be the full DetailedVulnerability object or null */
     vulnerability?: DetailedVulnerability | null;
@@ -195,6 +195,20 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
                 // No need to notify webview immediately, selection context will be used on next sendMessage
                 // Or, if immediate UI feedback is desired *in the webview* upon selection, notify here:
                 // this._notifyWebviewState();
+                return;
+            
+            case 'resetConversation':
+                console.log("[ChatbotViewProvider] Resetting conversation state.");
+                // Reset the conversation state
+                this._state.messages = [];
+                this._state.conversationId = null;
+                this._state.error = null;
+                this._state.selectedVulnerability = null; // Also deselect the related vulnerability
+                this._state.isLoading = false; // Ensure not blocked in loading
+    
+                // Notify the webview with the reset state
+                // This will clear the messages in the UI and prepare for a new conversation
+                this._notifyWebviewState();
                 return;
 
             default:

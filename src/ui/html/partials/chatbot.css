@@ -60,6 +60,45 @@ body {
      min-height: 0; /* Important for flex shrinking */
 }
 
+/* --- Chat Header --- */
+#chat-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+#chat-header h3 {
+    margin: 0;
+    font-size: 1.1em;
+    font-weight: 500;
+    color: var(--text-color);
+}
+
+#reset-button {
+    background: transparent;
+    border: none;
+    color: var(--secondary-text-color);
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+}
+
+#reset-button:hover {
+    background-color: rgba(var(--vscode-editor-foreground-rgb), 0.1);
+    color: var(--text-color);
+}
+
+#reset-button .codicon {
+    font-size: 1.1em;
+}
+
 /* --- Vulnerability Selector --- */
 #vuln-selector {
     border: 1px solid var(--border-color);
@@ -265,14 +304,15 @@ code:not(pre code) {
     background-color: var(--input-background);
     color: var(--input-foreground);
     border-radius: 4px;
-    resize: none; /* Disable manual resize */
+    resize: vertical; /* Allow only vertical resizing */
     font-family: var(--vscode-font-family);
     font-size: 1em;
     line-height: 1.4;
-    max-height: 100px; /* Limit height increase */
-     overflow-y: auto; /* Allow scrolling if content exceeds max-height */
-     scrollbar-width: thin;
-     scrollbar-color: var(--scrollbar-thumb-bg) transparent;
+    min-height: 34px; /* Match button height */
+    max-height: 200px; /* Increased maximum height */
+    overflow-y: auto; /* Allow scrolling if content exceeds max-height */
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb-bg) transparent;
 }
 #message-input:focus {
     border-color: var(--focus-border);
