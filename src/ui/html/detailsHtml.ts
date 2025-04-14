@@ -320,27 +320,33 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
                 color: rgb(120,69,255); /* Couleur accent */
             }
 
-            /* Grille d'infos (maintenant une section) */
-            .grid-container.section {
+            /* Grille d'infos (avec nouvelle structure) */
+            .grid-container {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 15px;
+                padding: 15px; /* Padding à l'intérieur de la grille */
+                background-color: var(--grid-item-background);
+                border-radius: 6px;
+                border: 1px solid var(--grid-item-border-color);
+            }
+            
+            /* Ces styles ne sont plus nécessaires avec la nouvelle structure */
+            /* .grid-container.section {
                 margin-bottom: var(--section-spacing);
                 background-color: var(--grid-item-background);
                 padding: 18px;
                 border-radius: 6px;
                 border: 1px solid var(--grid-item-border-color);
             }
-             .grid-container .section-title { /* Style titre spécifique grille */
-                 margin: -18px -18px 15px -18px; /* Ajustement pour sortir du padding */
+             .grid-container .section-title {
+                 margin: -18px -18px 15px -18px;
                  padding: 10px 18px;
                  border-bottom: 1px solid var(--section-border-color);
                  background-color: rgba(var(--vscode-panel-border-rgb), 0.1);
                  border-radius: 6px 6px 0 0;
-             }
-            .grid-container {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                gap: 15px;
-                padding: 0; /* Le padding est sur .grid-container.section */
-            }
+             } */
+
             .grid-item {
                 background-color: transparent; /* Fond fourni par le conteneur */
                 padding: 10px;
@@ -544,14 +550,16 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
         </h1>
         
         <!-- Grille d'informations générales dans sa propre section stylisée -->
-        <div class="grid-container section">
+        <div class="section">
              <div class="section-title"><span class="codicon codicon-info"></span> General Information</div>
-            <div class="grid-item"><strong>State:</strong> ${currentState}</div>
-            <div class="grid-item"><strong>Priority:</strong> ${currentPriority}</div>
-            <div class="grid-item"><strong>Detected:</strong> ${createdAt}</div>
-            <div class="grid-item"><strong>Last Seen:</strong> ${updatedAt}</div>
-            <div class="grid-item"><strong>Detection ID:</strong> <code>${detectionId}</code></div>
-            <div class="grid-item"><strong>Rule ID / CVE:</strong> <code>${ruleOrCveId}</code></div>
+             <div class="grid-container">
+                <div class="grid-item"><strong>State:</strong> ${currentState}</div>
+                <div class="grid-item"><strong>Priority:</strong> ${currentPriority}</div>
+                <div class="grid-item"><strong>Detected:</strong> ${createdAt}</div>
+                <div class="grid-item"><strong>Last Seen:</strong> ${updatedAt}</div>
+                <div class="grid-item"><strong>Detection ID:</strong> <code>${detectionId}</code></div>
+                <div class="grid-item"><strong>Rule ID / CVE:</strong> <code>${ruleOrCveId}</code></div>
+             </div>
         </div>
 
         <div class="section">
