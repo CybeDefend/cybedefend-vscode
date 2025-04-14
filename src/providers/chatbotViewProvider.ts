@@ -176,11 +176,11 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
 
             case 'loadInitialData': // Triggered by the webview script on load if data is missing
                 if (!this._state.vulnerabilities.length && !this._state.isVulnListLoading) {
-                     await this._loadVulnerabilities();
+                    await this._loadVulnerabilities();
                 } else {
-                     console.log("[ChatbotViewProvider] Skipping loadInitialData: Data already present or loading.");
-                      // Ensure the webview has the current state even if we don't load
-                      this._notifyWebviewState();
+                    console.log("[ChatbotViewProvider] Skipping loadInitialData: Data already present or loading.");
+                    // Ensure the webview has the current state even if we don't load
+                    this._notifyWebviewState();
                 }
                 return;
 
@@ -196,7 +196,7 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
                 // Or, if immediate UI feedback is desired *in the webview* upon selection, notify here:
                 // this._notifyWebviewState();
                 return;
-            
+
             case 'resetConversation':
                 console.log("[ChatbotViewProvider] Resetting conversation state.");
                 // Reset the conversation state
@@ -205,7 +205,7 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
                 this._state.error = null;
                 this._state.selectedVulnerability = null; // Also deselect the related vulnerability
                 this._state.isLoading = false; // Ensure not blocked in loading
-    
+
                 // Notify the webview with the reset state
                 // This will clear the messages in the UI and prepare for a new conversation
                 this._notifyWebviewState();
@@ -218,12 +218,15 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
     }
 
     /**
-     * Handles sending a message to the AI service.
-     * Manages starting a new conversation or continuing an existing one.
-     * Updates the state based on the API response.
-     * @param text - The user's message text.
-     */
+      * Handles sending a message text to the AI service.
+      * Manages starting a new conversation or continuing an existing one.
+      * Updates the state based on the API response, **removing the last message received.**
+      *
+      * @param {string} text - The user's message text.
+      * @returns {Promise<void>} A promise that resolves when the operation is complete.
+      */
     private async _handleSendMessage(text: string): Promise<void> {
+        // Prevent concurrent requests or requests without a project ID
         if (this._state.isLoading) {
             console.warn("[ChatbotViewProvider] Send message blocked: Already processing.");
             vscode.window.showWarningMessage("Please wait for the current response.");
@@ -235,71 +238,95 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
             return;
         }
 
+        // Set loading state and clear previous errors
         this._state.isLoading = true;
-        this._state.error = null; // Clear previous errors
+        this._state.error = null;
 
-        // 1. Optimistic UI update: Add user message
+        // 1. Optimistic UI Update: Show the user's message immediately
         const userMessage: MessageDto = new MessageDto('user', text, new Date());
-        // Create a temporary state for the optimistic update to avoid mutating _state directly yet
         const optimisticMessages = [...this._state.messages, userMessage];
         this._notifyWebviewState({ messages: optimisticMessages, isLoading: true, error: null }); // Show user msg + loading
 
         try {
             let finalApiResponse: ConversationResponseDto;
-            const isContextual = !!this._state.selectedVulnerability; // Check internal state
+            let messagesFromApi: MessageDto[] = []; // Variable pour stocker les messages bruts de l'API
+            const isContextual = !!this._state.selectedVulnerability; // Check if a vulnerability is selected in the state
 
+            // --- Determine whether to start or continue the conversation ---
             if (this._state.conversationId) {
-                // --- Continue existing conversation ---
+                // --- Case 1: Continue Existing Conversation ---
                 console.log(`[ChatbotViewProvider] Continuing conversation ${this._state.conversationId}`);
                 const request = new AddMessageConversationRequestDto(
-                    this._state.conversationId, text, this._state.projectId
+                    this._state.conversationId,
+                    text,
+                    this._state.projectId
                 );
                 finalApiResponse = await this._apiService.continueConversation(request);
+                messagesFromApi = finalApiResponse?.messages || []; // Récupérer les messages bruts
+                this._state.conversationId = finalApiResponse?.conversationId || this._state.conversationId; // Mettre à jour l'ID
 
             } else {
-                // --- Start new conversation ---
+                // --- Case 2: Start New Conversation ---
                 console.log(`[ChatbotViewProvider] Starting new conversation. Contextual: ${isContextual}`);
+
+                // a) Call startConversation API to initialize and get a conversation ID
                 const startRequest = new StartConversationRequestDto({
                     projectId: this._state.projectId,
                     isVulnerabilityConversation: isContextual,
-                    vulnerabilityId: this._state.selectedVulnerability?.id, // Use ID from state
+                    vulnerabilityId: this._state.selectedVulnerability?.id,
                     vulnerabilityType: this._state.selectedVulnerability?.vulnerability?.vulnerabilityType as ('sast' | 'iac' | undefined)
                 });
-
-                // a) Start the conversation to get the ID
                 const startResponse = await this._apiService.startConversation(startRequest);
                 if (!startResponse?.conversationId) {
                     throw new Error("Failed to start conversation: No conversation ID received.");
                 }
-                this._state.conversationId = startResponse.conversationId; // Store the new ID
+                const newConversationId = startResponse.conversationId; // Store the newly created ID
 
-                // b) Send the *first* user message using continueConversation endpoint
-                console.log(`[ChatbotViewProvider] Sending first message to new conversation ${this._state.conversationId}`);
+                // b) Call continueConversation API with the first user message
+                console.log(`[ChatbotViewProvider] Sending first message to new conversation ${newConversationId}`);
                 const continueRequest = new AddMessageConversationRequestDto(
-                    this._state.conversationId, text, this._state.projectId
+                    newConversationId,
+                    text, // The first message text
+                    this._state.projectId
                 );
                 finalApiResponse = await this._apiService.continueConversation(continueRequest);
+                messagesFromApi = finalApiResponse?.messages || []; // Récupérer les messages bruts
+                this._state.conversationId = finalApiResponse?.conversationId || newConversationId; // Mettre à jour l'ID
             }
 
-            // --- Process final API response ---
-            // The API response is the source of truth for messages and conversation ID
-            this._state.messages = finalApiResponse?.messages || []; // Replace local messages
-            this._state.conversationId = finalApiResponse?.conversationId || this._state.conversationId; // Ensure ID is current
+            // --- MODIFICATION : Supprimer systématiquement le DERNIER message de la réponse ---
+            let finalMessagesToDisplay = messagesFromApi; // Commencer avec les messages de l'API
+            if (finalMessagesToDisplay.length > 0) {
+                console.log(`[ChatbotViewProvider] Removing last message from the API response (length before: ${finalMessagesToDisplay.length}).`);
+                // Crée un nouveau tableau contenant tous les éléments sauf le dernier
+                finalMessagesToDisplay = finalMessagesToDisplay.slice(0, -1);
+                console.log(`[ChatbotViewProvider] Length after removing last message: ${finalMessagesToDisplay.length}.`);
+            } else {
+                console.log("[ChatbotViewProvider] API response was empty, no message to remove.");
+            }
+            // --- FIN MODIFICATION ---
 
-            // Optionally: Clear selection after successful contextual message
+            // Mettre à jour l'état avec la liste des messages modifiée
+            this._state.messages = finalMessagesToDisplay;
+
+            // --- Optional: Clear vulnerability selection after use ---
             // if (isContextual) {
             //     this._state.selectedVulnerability = null;
             // }
 
         } catch (error: any) {
+            // --- Error Handling ---
             console.error("[ChatbotViewProvider] Error during AI conversation:", error);
             this._state.error = error.message || "Failed to communicate with the Security Champion.";
-            // On error, revert messages to the optimistic state? Or keep empty?
-            // Let's keep the user message + show error for context.
+            // Revert messages to the optimistic state (user message only) to provide context for the error
             this._state.messages = optimisticMessages;
+            // Reset conversation ID on error? Or keep it? Resetting seems safer.
+            this._state.conversationId = null;
+
         } finally {
-            this._state.isLoading = false;
-            // Notify the webview with the final authoritative state (messages, loading=false, error?)
+            // --- Finalization ---
+            this._state.isLoading = false; // Always ensure loading state is reset
+            // Notify the webview with the final state (success or error)
             this._notifyWebviewState();
         }
     }
@@ -388,7 +415,7 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
      */
     private _notifyWebviewState(partialState: Partial<InternalProviderState> = {}) {
         if (this._view?.webview) {
-             // Merge partial state with current internal state
+            // Merge partial state with current internal state
             const mergedInternalState = { ...this._state, ...partialState };
 
             // Prepare the payload for the webview
