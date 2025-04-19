@@ -9,7 +9,6 @@ import { SettingsWebviewProvider } from '../providers/settingsWebviewProvider'; 
  * @param settingsProvider - The instance of the SettingsWebviewProvider.
  */
 export function openSettingsCommand(settingsProvider: SettingsWebviewProvider): void {
-    console.log('[SettingsCommand] Executing openSettingsCommand');
     settingsProvider.show(); // Method on the provider to show its panel
 }
 
@@ -18,7 +17,6 @@ export function openSettingsCommand(settingsProvider: SettingsWebviewProvider): 
  * @param authService - The authentication service instance to manage the secret.
  */
 export async function updateApiKeyCommand(authService: AuthService): Promise<void> {
-    console.log('[SettingsCommand] Executing updateApiKeyCommand');
     const newApiKey = await vscode.window.showInputBox({
         password: true,
         ignoreFocusOut: true,
@@ -33,20 +31,17 @@ export async function updateApiKeyCommand(authService: AuthService): Promise<voi
     });
 
     if (newApiKey === undefined) {
-        console.log('[SettingsCommand] API Key update cancelled by user (ESC).');
         return; // User pressed Esc
     }
 
     if (newApiKey.trim() === '') {
         vscode.window.showWarningMessage('API Key update cancelled (empty value entered).');
-        console.log('[SettingsCommand] API Key update cancelled (empty value).');
         return; // User entered blank
     }
 
     try {
         await authService.setApiKey(newApiKey); // Use the auth service to store the key
         vscode.window.showInformationMessage('API Key updated successfully.');
-        console.log('[SettingsCommand] API Key stored successfully via AuthService.');
     } catch (error: any) {
         console.error("[SettingsCommand] Failed to update API Key via AuthService:", error);
         vscode.window.showErrorMessage(`Failed to store API Key: ${error.message}`);

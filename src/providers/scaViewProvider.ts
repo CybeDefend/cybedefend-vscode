@@ -21,7 +21,6 @@ export class ScaViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
     constructor(private readonly context: vscode.ExtensionContext) {
         this._extensionUri = context.extensionUri;
-        console.log("[ScaViewProvider] Initialized.");
     }
 
     /**
@@ -32,19 +31,16 @@ export class ScaViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
         resolveContext: vscode.WebviewViewResolveContext,
         _token: vscode.CancellationToken
     ): void | Thenable<void> {
-        console.log("[ScaViewProvider] Resolving webview view...");
         this._view = webviewView;
 
         webviewView.webview.options = {
             enableScripts: true,
-            // Mise à jour des localResourceRoots pour inclure dist
             localResourceRoots: [
-                vscode.Uri.joinPath(this._extensionUri, 'media'), // Si pertinent
-                vscode.Uri.joinPath(this._extensionUri, 'dist'),  // Pour Codicons copiés
-                vscode.Uri.joinPath(this._extensionUri, 'node_modules') // Garder pour compatibilité
+                vscode.Uri.joinPath(this._extensionUri, 'media'),
+                vscode.Uri.joinPath(this._extensionUri, 'dist'),
+                vscode.Uri.joinPath(this._extensionUri, 'node_modules')
             ]
         };
-        // Définir le contenu HTML initial
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
         // Nettoyer les anciens listeners
@@ -54,7 +50,6 @@ export class ScaViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
         // Écouter les messages
         const messageSubscription = webviewView.webview.onDidReceiveMessage((data: { command: string, vulnerabilityData?: any, scanType?: ScanType }) => {
-            console.log(`[ScaViewProvider] Message received: ${data.command}`);
             if (data.command === 'triggerShowDetails' && data.vulnerabilityData && data.scanType) {
                 vscode.commands.executeCommand(COMMAND_SHOW_DETAILS, data.vulnerabilityData, data.scanType);
             } else if (data.command === 'triggerShowDetails') {
@@ -64,7 +59,6 @@ export class ScaViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
         // Gérer la destruction de la vue
         const disposeSubscription = webviewView.onDidDispose(() => {
-            console.log('[ScaViewProvider] Webview view instance disposed.');
             if (this._view === webviewView) { this._view = undefined; }
              messageSubscription.dispose();
              disposeSubscription.dispose();
@@ -73,7 +67,6 @@ export class ScaViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
         // Stocker les listeners
         this._disposables.push(messageSubscription, disposeSubscription);
-        console.log("[ScaViewProvider] Webview view resolved.");
     }
 
     /**
@@ -81,7 +74,6 @@ export class ScaViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
      */
     public updateFindings(findings: ScaVulnerabilityWithCvssDto[]): void {
         this._findings = findings || [];
-        console.log(`[ScaViewProvider] Updating findings. Count: ${this._findings.length}`);
         this._updateViewHtml();
     }
 
@@ -92,8 +84,6 @@ export class ScaViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
         if (this._view) {
             this._view.show?.(true);
             this._view.webview.html = this._getHtmlForWebview(this._view.webview);
-        } else {
-             console.log("[ScaViewProvider] View not resolved/visible.");
         }
     }
 
@@ -101,8 +91,6 @@ export class ScaViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
      * Génère le HTML pour cette vue.
      */
     private _getHtmlForWebview(webview: vscode.Webview): string {
-        // Appelle la fonction importée depuis ../ui/html/findingsHtml.ts
-        // Cast `this._findings` vers `DetailedVulnerability[]`.
         return getFindingsViewHtml(this._findings as DetailedVulnerability[], 'sca', webview, this._extensionUri);
     }
 
@@ -110,7 +98,6 @@ export class ScaViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
      * Nettoie les ressources.
      */
     public dispose(): void {
-        console.log("[ScaViewProvider] Disposing provider.");
         while (this._disposables.length) {
             this._disposables.pop()?.dispose();
         }

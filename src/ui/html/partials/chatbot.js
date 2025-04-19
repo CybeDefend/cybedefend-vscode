@@ -4,7 +4,7 @@
 // It receives initialData and initialFullVulnerabilities from the HTML template.
 
 // Wrap in an IIFE to avoid polluting the global scope
-(function() {
+(function () {
     /** @type {import("vscode").WebviewApi} */
     const vscode = acquireVsCodeApi();
 
@@ -15,16 +15,27 @@
     const vulnSelect = document.getElementById('vuln-select');
     const vulnSelectorDiv = document.getElementById('vuln-selector');
     const resetButton = document.getElementById('reset-button');
+    const loadingIndicatorContainer = document.createElement('div'); // Container for loading/streaming indicators
+    loadingIndicatorContainer.id = 'loading-indicator-container'; // Assign ID for potential styling/selection
 
     // --- Local State Variables ---
     // Initialize state from data injected via the HTML template
-    /** @type {object} Holds the main state (messages, loading status, simplified vulns, etc.) */
-    let currentState = initialData || { messages: [], isLoading: false, isVulnListLoading: false, error: "Failed to load initial state.", vulnerabilities: [], selectedVulnerabilityId: null, conversationId: null, projectId: null };
-    /** @type {Array<object>} Holds the full vulnerability objects */
+    /** @type {StateForWebview} Holds the main state received from the provider */
+    let currentState = initialData || {
+        messages: [],
+        isLoading: false,
+        isStreaming: false, // Added
+        isVulnListLoading: false,
+        error: null,
+        limitReachedError: null, // Added
+        assistantStreamContent: "", // Added
+        vulnerabilities: [],
+        selectedVulnerabilityId: null,
+        conversationId: null,
+        projectId: null
+    };
+    /** @type {Array<DetailedVulnerability>} Holds the full vulnerability objects */
     let fullVulnerabilitiesData = initialFullVulnerabilities || [];
-
-    console.log('[ChatbotView] Script loaded. Initial state:', currentState);
-    console.log('[ChatbotView] Script loaded. Initial full vulnerabilities count:', fullVulnerabilitiesData.length);
 
 
     // --- Helper Functions ---
@@ -32,7 +43,8 @@
     /** Scrolls the messages container to the bottom. */
     function scrollToBottom() {
         if (messagesDiv) {
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            // Scroll down a bit more aggressively to ensure visibility of input area or indicators
+            messagesDiv.scrollTop = messagesDiv.scrollHeight + 50;
         }
     }
 
@@ -52,55 +64,61 @@
     }
 
     /**
-     * Formats raw message content for display, handling basic Markdown.
-     * Assumes input is safe (already escaped if necessary).
+     * Formats raw message content for display, handling basic Markdown (code blocks, inline code, newlines).
+     * Input should already be appropriately escaped for HTML where necessary *before* calling this,
+     * especially if dealing with user-generated content directly, though here we expect content from the provider.
      * @param {string | undefined | null} rawContent Raw message content.
      * @returns {string} HTML formatted string.
      */
     function formatMessageContent(rawContent) {
-        // Start with safe, escaped content
-        let formatted = escapeHtml(rawContent || '');
+        let formatted = rawContent || ''; // Start with raw content
+
+        // --- Basic Markdown-like Formatting ---
         try {
-            // --- Format Fenced Code Blocks (```lang\ncode\n```) ---
-            // Use RegExp constructor to avoid backtick conflicts in template literals (though not strictly needed here in a .js file, it's safer)
-            // Match ``` optionally followed by a language, newline, code, newline, and ```
-            const fencedCodeBlockRegex = new RegExp('(\\`{3})(\\w*)\\n?([\\s\\S]*?)\\n?(\\1)', 'g');
-            formatted = formatted.replace(fencedCodeBlockRegex, (match, ticks, lang, code) => {
-                const trimmedCode = code.trim();
-                // Code inside <pre><code> should ideally be unescaped if it was HTML escaped before,
-                // but for simplicity here, we keep it escaped as highlight.js or others might handle it.
-                // If using a highlighter, ensure it gets the raw code *before* escaping.
-                return `<pre><code class="language-${escapeHtml(lang || '')}">${trimmedCode}</code></pre>`;
+            // 1. Fenced Code Blocks (```lang\ncode\n```)
+            // Important: Temporarily replace escaped backticks within potential code blocks
+            // to prevent the regex from breaking them. Use a placeholder.
+            const backtickPlaceholder = "__TEMP_BACKTICK__";
+            formatted = formatted.replace(/\\`/g, backtickPlaceholder);
+
+            const fencedCodeBlockRegex = /```(\w*)?\n?([\s\S]*?)\n?```/g;
+            formatted = formatted.replace(fencedCodeBlockRegex, (match, lang, code) => {
+                // Restore placeholders inside the captured code block
+                const restoredCode = code.replace(new RegExp(backtickPlaceholder, 'g'), '`');
+                // Escape the *content* of the code block before putting it in the pre/code tags
+                const escapedCode = escapeHtml(restoredCode.trim());
+                return `<pre><code class="language-${escapeHtml(lang || '')}">${escapedCode}</code></pre>`;
             });
 
-            // --- Format Inline Code (`code`) ---
-            // Process text outside of <pre> tags to avoid altering code blocks.
-            const inlineCodeRegex = new RegExp('\\`([^\\`]+)\\`', 'g');
+            // Restore any remaining placeholders outside code blocks (shouldn't be many)
+            formatted = formatted.replace(new RegExp(backtickPlaceholder, 'g'), '`');
+
+            // 2. Inline Code (`code`) - Process *after* fenced blocks
+            // Use a negative lookbehind/lookahead or split/map approach to avoid matching backticks within <pre>
+            const inlineCodeRegex = /`([^`]+?)`/g;
             const parts = formatted.split(/(<pre[\s\S]*?<\/pre>)/); // Split by <pre> blocks
             formatted = parts.map((part, index) => {
                 if (index % 2 === 0) { // Text outside <pre>
-                    return part.replace(inlineCodeRegex, (match, code) => {
-                       // 'code' content is already escaped from the initial escapeHtml call
-                       return `<code>${code}</code>`;
-                    });
+                    // Escape the content *before* wrapping in <code>
+                    return part.replace(inlineCodeRegex, (match, code) => `<code>${escapeHtml(code)}</code>`);
                 }
-                return part; // Return <pre> block unchanged
+                return part; // Return <pre> block unchanged (its content is already escaped)
             }).join('');
 
 
-            // --- Format Newlines (\n to <br>) ---
-            // Also process outside of <pre> tags.
+            // 3. Newlines (\n to <br>) - Process *last*, outside of <pre>
             const finalParts = formatted.split(/(<pre[\s\S]*?<\/pre>)/);
             formatted = finalParts.map((part, index) => {
                 if (index % 2 === 0) { // Outside <pre>
                     return part.replace(/\n/g, '<br>');
                 }
-                return part; // Inside <pre>, keep original newlines
+                // Inside <pre>, browsers handle newlines correctly, so return as is
+                return part;
             }).join('');
 
         } catch (e) {
             console.error("Error formatting message content:", e);
-            // Fallback: Simple newline to <br> conversion on the escaped content
+            // Fallback: Simple escape and newline conversion
             formatted = escapeHtml(rawContent || '').replace(/\n/g, '<br>');
         }
         return formatted;
@@ -110,86 +128,135 @@
     // --- UI Rendering Functions ---
 
     /**
-     * Renders the list of messages in the chat UI.
-     * @param {Array<object>} messages - Array of messages from the state.
-     * @param {boolean} isLoading - Whether a response is currently loading.
-     * @param {string | null} error - Any error message to display.
+     * Renders messages, loading indicators, streaming content, and errors based on the current state.
+     * @param {StateForWebview} state - The complete state object from the provider.
      */
-    function renderMessages(messages, isLoading, error) {
+    function renderUI(state) {
         if (!messagesDiv) return;
-        messagesDiv.innerHTML = ''; // Clear previous content
+        messagesDiv.innerHTML = ''; // Clear previous messages and indicators
 
-        if (!messages?.length && !isLoading && !error) {
-            messagesDiv.innerHTML = '<p style="text-align:center; color: var(--secondary-text-color);">Ask the Security Champion any security-related question...</p>';
-            return;
+        // --- Render Messages History ---
+        if (!state.messages?.length && !state.isLoading && !state.isStreaming && !state.error && !state.limitReachedError) {
+            // Initial empty state message
+            messagesDiv.innerHTML = '<p class="empty-chat-message">Ask the Security Champion anything...</p>';
+        } else {
+            // Sort messages chronologically
+            const messagesToRender = [...(state.messages || [])].sort((a, b) =>
+                new Date(a.createdAt || 0) - new Date(b.createdAt || 0)
+            );
+
+            messagesToRender.forEach(function (msg) {
+                const msgEl = document.createElement('div');
+                const alignClass = msg.role === 'user' ? 'message-user' : 'message-ai';
+                const icon = msg.role === 'user' ? 'codicon-account' : 'codicon-hubot';
+                // Format content *before* adding to innerHTML
+                const formattedContent = formatMessageContent(msg.content);
+                const timestamp = msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+                const fullTimestamp = msg.createdAt ? new Date(msg.createdAt).toLocaleString() : '';
+                msgEl.className = `message ${alignClass}`;
+                msgEl.innerHTML = `
+                     <span class="codicon ${icon} message-icon" title="${msg.role === 'user' ? 'You' : 'AI'}"></span>
+                     <div class="message-content">
+                         ${formattedContent}
+                         <div class="message-timestamp" title="${fullTimestamp}">${timestamp}</div>
+                     </div>
+                 `;
+                messagesDiv.appendChild(msgEl);
+            });
         }
 
-        // Ensure messages are displayed in chronological order (oldest first)
-        const messagesToRender = [...(messages || [])].sort((a, b) => {
-            // Sort by createdAt timestamp if available
-            if (a.createdAt && b.createdAt) {
-                return new Date(a.createdAt) - new Date(b.createdAt);
-            }
-            // Fall back to original order if no timestamps
-            return 0;
-        });
+        // --- Render Streaming Assistant Message ---
+        if (state.isStreaming) {
+            const streamingEl = document.createElement('div');
+            const formattedStreamingContent = formatMessageContent(state.assistantStreamContent);
+            streamingEl.className = 'message message-ai streaming'; // Add streaming class
+            // Add a blinking cursor effect using CSS (defined in chatbot.css)
+            streamingEl.innerHTML = `
+                 <span class="codicon codicon-hubot message-icon" title="AI"></span>
+                 <div class="message-content">
+                     ${formattedStreamingContent}<span class="blinking-cursor">▎</span>
+                 </div>
+             `;
+            messagesDiv.appendChild(streamingEl);
+        }
 
-        messagesToRender.forEach(function(msg) {
-            const msgEl = document.createElement('div');
-            const alignClass = msg.role === 'user' ? 'message-user' : 'message-ai';
-            const icon = msg.role === 'user' ? 'codicon-account' : 'codicon-hubot';
-            const formattedContent = formatMessageContent(msg.content); // Format content here
-            const timestamp = msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-            const fullTimestamp = msg.createdAt ? new Date(msg.createdAt).toLocaleString() : '';
-            msgEl.className = `message ${alignClass}`;
-            msgEl.innerHTML = `
-                <span class="codicon ${icon} message-icon" title="${msg.role === 'user' ? 'You' : 'AI'}"></span>
-                <div class="message-content">
-                    ${formattedContent}
-                    <div class="message-timestamp" title="${fullTimestamp}">${timestamp}</div>
-                </div>
-            `;
-            messagesDiv.appendChild(msgEl);
-        });
+        // --- Render Loading/Error Indicators Below Messages ---
+        loadingIndicatorContainer.innerHTML = ''; // Clear previous indicators in this container
 
-        if (isLoading) {
+        if (state.isLoading) { // Show during POST request phase
             const loadingEl = document.createElement('div');
-            loadingEl.className = 'loading-indicator';
-            loadingEl.innerHTML = '<span class="codicon codicon-loading codicon-modifier-spin"></span> Answering...';
-            messagesDiv.appendChild(loadingEl);
+            loadingEl.className = 'loading-indicator info-message';
+            loadingEl.innerHTML = '<span class="codicon codicon-loading codicon-modifier-spin"></span> Waiting for Security Champion...';
+            loadingIndicatorContainer.appendChild(loadingEl);
         }
 
-        if (error) {
+        if (state.limitReachedError) { // Specific limit error
+            const limitErrorEl = document.createElement('div');
+            limitErrorEl.className = 'error-message';
+            limitErrorEl.innerHTML = `<span class="codicon codicon-stop-circle"></span> ${escapeHtml(state.limitReachedError)}`;
+            loadingIndicatorContainer.appendChild(limitErrorEl);
+        } else if (state.error) { // General error
             const errorEl = document.createElement('div');
             errorEl.className = 'error-message';
-            errorEl.innerHTML = `<span class="codicon codicon-error"></span> ${escapeHtml(error)}`; // Ensure error is escaped
-            messagesDiv.appendChild(errorEl);
+            errorEl.innerHTML = `<span class="codicon codicon-error"></span> ${escapeHtml(state.error)}`;
+            loadingIndicatorContainer.appendChild(errorEl);
         }
-        scrollToBottom();
+
+        // Append the indicator container below the messages div if it has content
+        if (loadingIndicatorContainer.hasChildNodes()) {
+            messagesDiv.appendChild(loadingIndicatorContainer);
+        }
+
+        // --- Update Vulnerability Selector ---
+        renderVulnSelect(
+            state.vulnerabilities,
+            state.selectedVulnerabilityId,
+            state.isVulnListLoading,
+            state.error, // Pass error state for potential context
+            state.projectId
+        );
+
+        // --- Update Input & Button States ---
+        updateInputState(state);
+
+        // --- Scroll to Bottom ---
+        // Use setTimeout to ensure scrolling happens after DOM updates, especially for streaming
+        setTimeout(scrollToBottom, 50);
     }
+
 
     /**
      * Updates the vulnerability dropdown options and visibility.
-     * @param {Array<object>} vulnerabilities - Simplified/escaped list from state.
+     * @param {Array<VulnerabilityInfoForWebview>} vulnerabilities - Simplified/escaped list from state.
      * @param {string | null} selectedVulnId - ID of the currently selected vulnerability.
      * @param {boolean} isVulnListLoading - Whether the list is currently loading.
-     * @param {string | null} error - Any general error.
+     * @param {string | null} _error - General error state (currently unused in this function but passed).
      * @param {string | null} projectId - Project ID.
      */
-    function renderVulnSelect(vulnerabilities, selectedVulnId, isVulnListLoading, error, projectId) {
+    function renderVulnSelect(vulnerabilities, selectedVulnId, isVulnListLoading, _error, projectId) {
         if (!vulnSelect || !vulnSelectorDiv) return;
 
         const hasProject = !!projectId;
         const hasVulns = vulnerabilities && vulnerabilities.length > 0;
-        const shouldShowSelector = hasProject && !isVulnListLoading && hasVulns;
+        const shouldShowSelector = hasProject && hasVulns; // Show if project and vulns loaded
 
         vulnSelectorDiv.classList.toggle('hidden', !shouldShowSelector);
+        vulnSelectorDiv.classList.toggle('loading', isVulnListLoading); // Add loading class
+
+        if (isVulnListLoading) {
+            vulnSelect.innerHTML = '<option value="">Loading vulnerabilities...</option>';
+            vulnSelect.disabled = true;
+            return;
+        }
+
+        vulnSelect.disabled = false; // Re-enable after loading
 
         if (!shouldShowSelector) {
             vulnSelect.innerHTML = '<option value="">Select vulnerability (Optional)...</option>';
             return;
         }
 
+        // --- Populate Dropdown ---
         vulnSelect.innerHTML = ''; // Clear previous options
         const defaultOption = document.createElement('option');
         defaultOption.value = "";
@@ -197,34 +264,59 @@
         vulnSelect.appendChild(defaultOption);
 
         const groups = { sast: [], iac: [] };
-        (vulnerabilities || []).forEach(function(v) {
+        (vulnerabilities || []).forEach(v => {
             if (v.type === 'sast') groups.sast.push(v);
             else if (v.type === 'iac') groups.iac.push(v);
         });
 
-        const createOptionElement = function(vuln) {
+        const createOptionElement = function (vuln) {
             const option = document.createElement('option');
             option.value = vuln.id;
-            // Data (name, shortPath, fullPath) received in 'vulnerabilities' is already escaped by the provider/html generator
-            option.textContent = `${vuln.name} (${vuln.shortPath})`.trim();
-            option.title = `${vuln.name} in ${vuln.fullPath || '(path unknown)'}`;
+            // Data received in 'vulnerabilities' is already escaped by the provider/html generator
+            option.textContent = `${vuln.name} (${vuln.shortPath})`; // Use escaped data
+            option.title = `${vuln.name} in ${vuln.fullPath || '(path unknown)'}`; // Use escaped data
             return option;
         };
 
         if (groups.sast.length > 0) {
             const optgroup = document.createElement('optgroup');
             optgroup.label = "Code Vulnerabilities (SAST)";
-            groups.sast.forEach(v => optgroup.appendChild(createOptionElement(v)));
+            groups.sast.sort((a, b) => a.name.localeCompare(b.name)).forEach(v => optgroup.appendChild(createOptionElement(v)));
             vulnSelect.appendChild(optgroup);
         }
         if (groups.iac.length > 0) {
             const optgroup = document.createElement('optgroup');
             optgroup.label = "Infrastructure Vulnerabilities (IaC)";
-            groups.iac.forEach(v => optgroup.appendChild(createOptionElement(v)));
+            groups.iac.sort((a, b) => a.name.localeCompare(b.name)).forEach(v => optgroup.appendChild(createOptionElement(v)));
             vulnSelect.appendChild(optgroup);
         }
 
         vulnSelect.value = selectedVulnId || ""; // Restore selection
+    }
+
+    /**
+     * Updates the enabled/disabled state of input elements based on the application state.
+     * @param {StateForWebview} state - The current application state.
+     */
+    function updateInputState(state) {
+        const isDisabled = !!state.isLoading || !!state.isStreaming || !!state.limitReachedError;
+        const isInputEmpty = !messageInput || messageInput.value.trim().length === 0;
+
+        if (sendButton) {
+            sendButton.disabled = isDisabled || isInputEmpty;
+        }
+        if (messageInput) {
+            messageInput.disabled = isDisabled;
+            messageInput.placeholder = isDisabled ? "Waiting for response..." : "Ask the Security Champion...";
+        }
+        if (resetButton) {
+            // Also disable reset while loading/streaming to prevent interrupting operations
+            resetButton.disabled = !!state.isLoading || !!state.isStreaming;
+        }
+        if (vulnSelect) {
+            // Disable vuln select while loading/streaming or if limit reached
+            vulnSelect.disabled = isDisabled || state.isVulnListLoading;
+        }
     }
 
 
@@ -234,28 +326,40 @@
     function handleSendMessage() {
         if (!messageInput || !sendButton) return;
         const text = messageInput.value.trim();
-        if (!text || text.length > 512 || currentState.isLoading) return;
+        // Check all disabling conditions
+        if (!text || text.length > 1000 || currentState.isLoading || currentState.isStreaming || currentState.limitReachedError) {
+            console.warn("[Chatbot Webview] Send message blocked by current state.");
+            return;
+        }
 
-        console.log(`[Chatbot Webview] Sending message: "${text}"`);
         vscode.postMessage({ command: 'sendMessage', text: text });
 
+        // Clear input and disable button immediately (state update will confirm)
         messageInput.value = '';
-        sendButton.disabled = true;
-        if (vulnSelect) vulnSelect.value = "";
-        vscode.postMessage({ command: 'setSelectedVulnerability', vulnerability: null });
+        updateInputState({ ...currentState, isLoading: true }); // Simulate immediate loading state
+
+        // Deselect vulnerability after sending message with it
+        if (currentState.selectedVulnerabilityId && vulnSelect) {
+            vulnSelect.value = "";
+            // Notify provider immediately about deselection (though handleSendMessage implies context was used)
+            vscode.postMessage({ command: 'setSelectedVulnerability', vulnerability: null });
+        }
     }
 
     /** Handles resetting the conversation */
     function handleResetConversation() {
-        if (currentState.isLoading) return; // Don't reset while loading
-        
-        console.log('[Chatbot Webview] Resetting conversation');
+        // Prevent reset if loading or streaming
+        if (currentState.isLoading || currentState.isStreaming) {
+            console.warn("[Chatbot Webview] Reset blocked by current state.");
+            return;
+        }
+
         vscode.postMessage({ command: 'resetConversation' });
-        
-        // Clear the input and vulnerability selection
+
+        // Clear UI elements immediately (state update will confirm)
         if (messageInput) messageInput.value = '';
         if (vulnSelect) vulnSelect.value = '';
-        if (sendButton) sendButton.disabled = true;
+        updateInputState({ ...currentState, isLoading: false, isStreaming: false, messages: [], error: null, limitReachedError: null }); // Simulate reset state
     }
 
 
@@ -264,14 +368,15 @@
     // Send Button and Message Input
     if (sendButton && messageInput) {
         sendButton.addEventListener('click', handleSendMessage);
-        messageInput.addEventListener('keypress', function(e) {
+        messageInput.addEventListener('keypress', function (e) {
             if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
+                e.preventDefault(); // Prevent newline
                 handleSendMessage();
             }
         });
-        messageInput.addEventListener('input', function() {
-            sendButton.disabled = messageInput.value.trim().length === 0 || !!currentState.isLoading;
+        // Update button state on input change
+        messageInput.addEventListener('input', function () {
+            updateInputState(currentState);
         });
     } else {
         console.error("Chatbot input/button elements not found!");
@@ -286,13 +391,13 @@
 
     // Vulnerability Select Dropdown
     if (vulnSelect) {
-        vulnSelect.addEventListener('change', function(e) {
+        vulnSelect.addEventListener('change', function (e) {
             const selectedId = e.target.value;
             // Find the FULL object from the locally stored full data
-            const selectedVulnFull = selectedId
+            // Ensure fullVulnerabilitiesData is populated before searching
+            const selectedVulnFull = selectedId && fullVulnerabilitiesData
                 ? fullVulnerabilitiesData.find(v => v?.id === selectedId)
                 : null;
-            console.log(`[Chatbot Webview] Vulnerability selection changed: ID=${selectedId}`);
             // Notify provider, sending the full object (or null)
             vscode.postMessage({ command: 'setSelectedVulnerability', vulnerability: selectedVulnFull });
         });
@@ -301,61 +406,32 @@
     }
 
     // Listener for messages FROM the extension provider
-    window.addEventListener('message', function(event) {
+    window.addEventListener('message', function (event) {
         const message = event.data; // { command: 'updateState', state: { ... } }
         if (message.command === 'updateState') {
-            console.log("[Chatbot Webview] Received state update:", message.state);
             // Update the entire local state
             currentState = message.state;
 
-            // Specifically update the local store of full vulnerability data
+            // Update the local store of full vulnerability data if present in the update
             if (currentState.vulnerabilitiesFull) {
                 fullVulnerabilitiesData = currentState.vulnerabilitiesFull;
-                 console.log("[Chatbot Webview] Updated fullVulnerabilitiesData count:", fullVulnerabilitiesData.length);
-            } else {
-                console.warn("[Chatbot Webview] 'vulnerabilitiesFull' array missing in state update.");
             }
 
-            // Re-render UI
-            renderMessages(currentState.messages, currentState.isLoading, currentState.error);
-            renderVulnSelect(
-                currentState.vulnerabilities, // Use simplified list from state
-                currentState.selectedVulnerabilityId,
-                currentState.isVulnListLoading,
-                currentState.error,
-                currentState.projectId
-            );
+            // Re-render the entire UI based on the new state
+            renderUI(currentState);
 
-            // Update send button state
-            if (sendButton && messageInput) {
-                sendButton.disabled = !!currentState.isLoading || messageInput.value.trim().length === 0;
-            }
-            // Ensure scroll after potential message updates
-            scrollToBottom();
         }
     });
 
     // --- Initial UI Render ---
-    console.log("[Chatbot Webview] Performing initial UI render.");
-    renderMessages(currentState.messages, currentState.isLoading, currentState.error);
-    renderVulnSelect(
-        currentState.vulnerabilities,
-        currentState.selectedVulnerabilityId,
-        currentState.isVulnListLoading,
-        currentState.error,
-        currentState.projectId
-    );
-    if (sendButton && messageInput) {
-        sendButton.disabled = !!currentState.isLoading || messageInput.value.trim().length === 0;
-    }
-    scrollToBottom();
+    renderUI(currentState); // Initial render based on injected state
 
     // --- Request Initial Data Load if Necessary ---
-    const needsInitialLoad = !!currentState.projectId
-                              && (!currentState.vulnerabilities || currentState.vulnerabilities.length === 0)
-                              && !currentState.isVulnListLoading;
-    if (needsInitialLoad) {
-        console.log("[Chatbot Webview] Requesting initial vulnerability load from provider...");
+    // Check if we have a project ID but no vulnerabilities loaded yet
+    const needsInitialVulnLoad = !!currentState.projectId
+        && (!currentState.vulnerabilities || currentState.vulnerabilities.length === 0)
+        && !currentState.isVulnListLoading; // Don't request if already loading
+    if (needsInitialVulnLoad) {
         vscode.postMessage({ command: 'loadInitialData' });
     }
 

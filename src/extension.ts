@@ -15,16 +15,10 @@ import { showVulnerabilityDetailsCommand, openFileLocationCommand } from './comm
 import {
     COMMAND_START_SCAN, COMMAND_OPEN_SETTINGS, COMMAND_SHOW_DETAILS,
     COMMAND_UPDATE_API_KEY, COMMAND_OPEN_FILE_LOCATION
-    // VIEW_CONTAINER_ID n'est plus utilisé directement ici si défini dans package.json
 } from './constants/constants'; // Assurez-vous que le chemin est correct
 import { DetailedVulnerability } from './dtos/result/details'; // Assurez-vous que le chemin est correct
 
 export function activate(context: vscode.ExtensionContext) {
-    console.log('[CybeDefendScanner] Activating extension...');
-
-    // --- SUPPRIMÉ : La ligne forçant le contexte initial n'est plus nécessaire ---
-    // vscode.commands.executeCommand('setContext', 'cybedefendScanner.mode', 'scanner');
-
     // --- 1. Initialiser Services & Providers ---
     const authService = new AuthService(context);
     const apiService = new ApiService(authService);
@@ -65,7 +59,6 @@ export function activate(context: vscode.ExtensionContext) {
     ];
 
     viewProvidersToRegister.forEach(({ id, provider }) => {
-        console.log(`[CybeDefendScanner] Registering WebviewViewProvider: ${id}`);
         context.subscriptions.push(
             vscode.window.registerWebviewViewProvider(id, provider as vscode.WebviewViewProvider)
         );
@@ -101,25 +94,16 @@ export function activate(context: vscode.ExtensionContext) {
     // --- NOUVEAU : Enregistrer les commandes de FOCUS ---
     context.subscriptions.push(
         vscode.commands.registerCommand('cybedefendScanner.focusScannerView', () => {
-            // Donne le focus à la vue Summary (la vue principale du mode Scanner)
-            // L'ID complet de la commande de focus est <viewId>.focus
             vscode.commands.executeCommand(`${SummaryViewProvider.viewType}.focus`);
-            console.log("Focus requested for Scanner Mode (Summary View)");
         })
     );
     context.subscriptions.push(
         vscode.commands.registerCommand('cybedefendScanner.focusChatbotView', () => {
             // Donne le focus à la vue Chatbot
             vscode.commands.executeCommand(`${ChatbotViewProvider.viewType}.focus`);
-            console.log("Focus requested for Chatbot Mode (Chatbot View)");
         })
     );
-    // --- SUPPRIMÉ : Les anciens enregistrements pour switchTo... ne sont plus nécessaires ---
-
-    console.log('[CybeDefendScanner] Extension activation complete.');
 }
 
 export function deactivate() {
-    console.log('[CybeDefendScanner] Deactivating extension.');
-    // Pas besoin de nettoyer les subscriptions ici, VS Code s'en charge.
 }

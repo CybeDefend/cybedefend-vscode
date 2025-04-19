@@ -64,9 +64,6 @@ export function getFindingsViewHtml(
 ): string {
     const nonce = getNonce();
     const { codiconsUri, codiconsFontUri } = getCommonAssetUris(webview, extensionUri);
-    // Log des URIs générées pour vérifier les chemins
-    console.log("Codicons CSS URI:", codiconsUri.toString());
-    console.log("Codicons Font URI:", codiconsFontUri.toString());
 
     const findingsCount = findings?.length ?? 0;
     const groupedFindings = _groupFindingsByFile(findings);

@@ -13,14 +13,12 @@ const esbuildProblemMatcherPlugin = {
 
 	setup(build) {
 		build.onStart(() => {
-			console.log('[watch] build started');
 		});
 		build.onEnd((result) => {
 			result.errors.forEach(({ text, location }) => {
 				console.error(`✘ [ERROR] ${text}`);
 				console.error(`    ${location.file}:${location.line}:${location.column}:`);
 			});
-			console.log('[watch] build finished');
 		});
 	},
 };
@@ -47,10 +45,8 @@ const copyCodiconsPlugin = {
 			
 			try {
 				fs.copyFileSync(fontSrc, fontDest);
-				console.log('✓ Copied codicon.ttf to dist folder');
 				
 				fs.copyFileSync(cssSrc, cssDest);
-				console.log('✓ Copied codicon.css to dist folder');
 			} catch (error) {
 				console.error('✘ Error copying Codicons files:', error);
 			}

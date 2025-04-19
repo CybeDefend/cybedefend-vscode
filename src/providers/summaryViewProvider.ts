@@ -31,7 +31,6 @@ export class SummaryViewProvider implements vscode.WebviewViewProvider, vscode.D
 
     constructor(private readonly context: vscode.ExtensionContext) {
         this._extensionUri = context.extensionUri;
-        console.log("[SummaryViewProvider] Initialized.");
         this.updateState({ noWorkspace: !vscode.workspace.workspaceFolders?.length, isReady: !!vscode.workspace.workspaceFolders?.length });
         const workspaceWatcher = vscode.workspace.onDidChangeWorkspaceFolders(() => {
             this.updateState({ noWorkspace: !vscode.workspace.workspaceFolders?.length, isReady: !!vscode.workspace.workspaceFolders?.length });
@@ -44,16 +43,14 @@ export class SummaryViewProvider implements vscode.WebviewViewProvider, vscode.D
         resolveContext: vscode.WebviewViewResolveContext<unknown>,
         _token: vscode.CancellationToken
     ): void | Thenable<void> {
-        console.log("[SummaryViewProvider] Resolving webview view...");
         this._view = webviewView;
 
         webviewView.webview.options = {
             enableScripts: true,
-            // Mise à jour pour inclure dist pour les Codicons
             localResourceRoots: [
-                vscode.Uri.joinPath(this._extensionUri, 'media'), // Si vous avez un dossier media
-                vscode.Uri.joinPath(this._extensionUri, 'dist'),  // Pour Codicons copiés
-                vscode.Uri.joinPath(this._extensionUri, 'node_modules') // Garder pour compatibilité
+                vscode.Uri.joinPath(this._extensionUri, 'media'),
+                vscode.Uri.joinPath(this._extensionUri, 'dist'),
+                vscode.Uri.joinPath(this._extensionUri, 'node_modules')
             ]
         };
 
@@ -66,7 +63,6 @@ export class SummaryViewProvider implements vscode.WebviewViewProvider, vscode.D
 
         // Handle messages
         const messageSubscription = webviewView.webview.onDidReceiveMessage((data: any) => {
-             console.log(`[SummaryViewProvider] Message received: ${data.command}`);
              if (data.command === 'selectFolder') {
                  vscode.commands.executeCommand('vscode.openFolder');
              }
@@ -74,7 +70,6 @@ export class SummaryViewProvider implements vscode.WebviewViewProvider, vscode.D
 
         // Handle disposal
         const disposeSubscription = webviewView.onDidDispose(() => {
-             console.log('[SummaryViewProvider] Webview view instance disposed.');
              if (this._view === webviewView) { this._view = undefined; }
              messageSubscription.dispose();
              disposeSubscription.dispose();
@@ -82,11 +77,9 @@ export class SummaryViewProvider implements vscode.WebviewViewProvider, vscode.D
          });
 
         this._disposables.push(messageSubscription, disposeSubscription);
-        console.log("[SummaryViewProvider] Webview view resolved.");
     }
 
     public setLoading(isLoading: boolean, message: string = "Scanning...") {
-        console.log(`[SummaryViewProvider] Setting loading state: ${isLoading}`);
         if (isLoading) {
             this._currentSummary = { isLoading: true, statusMessage: message };
         } else {
@@ -102,7 +95,6 @@ export class SummaryViewProvider implements vscode.WebviewViewProvider, vscode.D
     }
 
     public updateSummary(data: { total: number, counts: CountVulnerabilitiesCountByType, scanInfo: ScanProjectInfoDto }) {
-         console.log("[SummaryViewProvider] Updating with scan summary data.");
         this._currentSummary = {
             isLoading: false, error: null, isReady: false, noWorkspace: false,
             total: data.total, counts: data.counts, scanInfo: data.scanInfo
@@ -111,13 +103,11 @@ export class SummaryViewProvider implements vscode.WebviewViewProvider, vscode.D
     }
 
     public updateError(errorMessage: string) {
-         console.log("[SummaryViewProvider] Updating with error state.");
         this._currentSummary = { isLoading: false, error: errorMessage, isReady: false, noWorkspace: false };
         this._updateViewHtml();
     }
 
    public updateState(state: { isReady?: boolean, noWorkspace?: boolean }) {
-         console.log("[SummaryViewProvider] Updating state:", state);
         // Reset other fields only if setting a general state like noWorkspace or initial isReady
         if (state.noWorkspace !== undefined || state.isReady !== undefined) {
              this._currentSummary = {
@@ -146,7 +136,6 @@ export class SummaryViewProvider implements vscode.WebviewViewProvider, vscode.D
     }
 
     public dispose(): void {
-        console.log("[SummaryViewProvider] Disposing provider.");
         while (this._disposables.length) {
             this._disposables.pop()?.dispose();
         }

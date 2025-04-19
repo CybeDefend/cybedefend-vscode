@@ -1,67 +1,32 @@
 // src/providers/chatbotViewProvider.ts
 import * as vscode from 'vscode';
-import path from 'path'; // Nécessaire pour _prepareVulnerabilitiesForWebview
-import { ApiService } from '../api/apiService';
+import path from 'path';
+// --- Nouvelle Bibliothèque SSE ---
+import { createEventSource } from 'eventsource-client';
+// ---------------------------------
+import { ApiService, InitiateConversationResponse } from '../api/apiService';
 import { MessageDto } from '../dtos/ai/response/message.dto';
 import { DetailedVulnerability } from '../dtos/result/details';
-import { getProjectId } from '../utilities/config';
-import { ConversationResponseDto } from '../dtos/ai/response/conversation-response.dto';
+import { getProjectId, getApiBaseUrl } from '../utilities/config';
 import { StartConversationRequestDto } from '../dtos/ai/request/start-conversation-request.dto';
 import { AddMessageConversationRequestDto } from '../dtos/ai/request/add-message-conversation-request.dto';
-import { getChatbotHtml, VulnerabilityInfoForWebview } from '../ui/html/chatbotHtml'; // Importer l'interface
+import { getChatbotHtml, VulnerabilityInfoForWebview } from '../ui/html/chatbotHtml';
+
+// --- Interfaces (inchangées) ---
+interface WebviewCommand { command: string; text?: string; vulnerability?: DetailedVulnerability | null; }
+interface ProviderCommand { command: string; state: StateForWebview; }
+interface InternalProviderState { messages: MessageDto[]; isLoading: boolean; isStreaming: boolean; isVulnListLoading: boolean; error: string | null; limitReachedError: string | null; assistantStreamContent: string; vulnerabilities: DetailedVulnerability[]; selectedVulnerability: DetailedVulnerability | null; conversationId: string | null; projectId: string | null; }
+interface StateForWebview { messages: MessageDto[]; isLoading: boolean; isStreaming: boolean; isVulnListLoading: boolean; error: string | null; limitReachedError: string | null; assistantStreamContent: string; vulnerabilities: VulnerabilityInfoForWebview[]; vulnerabilitiesFull: DetailedVulnerability[]; selectedVulnerabilityId: string | null; conversationId: string | null; projectId: string | null; }
+interface SseErrorPayload { timestamp?: string; service?: string; method?: string; message: string; code: number; }
+interface SsePayload { type: 'delta' | 'done' | 'error' | 'info' | 'history'; payload: any; }
+// Pas besoin de EventSourceErrorEvent spécifique avec cette approche
+
+// Define a type alias for the instance returned by the factory
+type EventSourceClientInstance = ReturnType<typeof createEventSource>;
 
 /**
- * Interface for messages exchanged between the webview and the provider.
- */
-interface ChatbotMessage {
-    command: 'sendMessage' | 'loadInitialData' | 'setSelectedVulnerability' | 'getInitialState' | 'resetConversation';
-    text?: string;
-    /** Can be the full DetailedVulnerability object or null */
-    vulnerability?: DetailedVulnerability | null;
-}
-
-/**
- * Defines the state managed by the provider.
- * This is the internal state, which will be transformed before sending to the webview.
- */
-interface InternalProviderState {
-    messages: MessageDto[];
-    isLoading: boolean; // General loading state (e.g., waiting for AI)
-    isVulnListLoading: boolean; // Specific state for loading the vuln list
-    error: string | null;
-    /** Stores the full list of vulnerabilities fetched from the API */
-    vulnerabilities: DetailedVulnerability[];
-    /** Stores the currently selected full vulnerability object, or null */
-    selectedVulnerability: DetailedVulnerability | null;
-    conversationId: string | null;
-    projectId: string | null;
-}
-
-/**
- * Defines the structure of the state object sent TO the webview via postMessage.
- * Includes both simplified and full vulnerability lists.
- */
-interface StateForWebview {
-    messages: MessageDto[];
-    isLoading: boolean;
-    isVulnListLoading: boolean;
-    error: string | null;
-    /** Simplified list for the dropdown */
-    vulnerabilities: VulnerabilityInfoForWebview[];
-    /** Full list for context lookup */
-    vulnerabilitiesFull: DetailedVulnerability[];
-    /** ID of the selected vulnerability (or null) */
-    selectedVulnerabilityId: string | null;
-    conversationId: string | null;
-    projectId: string | null;
-}
-
-
-/**
- * Provides the "Security Champion" chatbot webview view.
- * Manages conversation state, vulnerability context, and API interaction.
- * Implements vscode.WebviewViewProvider to integrate with the VS Code UI.
- * Implements vscode.Disposable to handle resource cleanup.
+ * Fournit la vue webview "Security Champion".
+ * Utilise 'eventsource-client' pour le streaming SSE.
  */
 export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
 
@@ -71,402 +36,348 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
     private readonly _extensionUri: vscode.Uri;
     private _disposables: vscode.Disposable[] = [];
     private _apiService: ApiService;
+    // Stocke l'instance retournée par createEventSource (qui a une méthode close)
+    // Utilisation du type EventSource importé depuis 'eventsource-client'
+    private _eventSourceInstance: EventSourceClientInstance | null = null;
 
-    /** Internal state of the view provider */
+    /** État interne complet du Provider */
     private _state: InternalProviderState = {
-        messages: [],
-        isLoading: false,
-        isVulnListLoading: false,
-        error: null,
-        vulnerabilities: [], // Start with empty full list
-        selectedVulnerability: null, // Start with no selection
-        conversationId: null,
+        messages: [], isLoading: false, isStreaming: false, isVulnListLoading: false,
+        error: null, limitReachedError: null, assistantStreamContent: "",
+        vulnerabilities: [], selectedVulnerability: null, conversationId: null,
         projectId: getProjectId() || null
     };
 
-    /**
-     * Creates an instance of ChatbotViewProvider.
-     * @param context - The extension context provided by VS Code.
-     * @param apiService - The ApiService instance for backend communication.
-     */
+    /** Constructeur */
     constructor(
         private readonly context: vscode.ExtensionContext,
         apiService: ApiService
     ) {
         this._extensionUri = context.extensionUri;
         this._apiService = apiService;
-        console.log("[ChatbotViewProvider] Initialized.");
         if (!this._state.projectId) {
             console.warn("[ChatbotViewProvider] Project ID not configured.");
-            // Set error state that will be shown when the view resolves
-            this._state.error = "Project ID not configured in settings. Vulnerability context may be unavailable.";
+            this._state.error = "Project ID not configured in VS Code settings.";
         }
     }
 
-    /**
-     * Called by VS Code when the view needs to be resolved (e.g., when the user opens it).
-     * Sets up the webview properties, initial HTML content, and message listeners.
-     * @param webviewView - The webview view instance being resolved.
-     * @param _context - Information about the state in which the view is being resolved (unused here).
-     * @param _token - A cancellation token for the operation (unused here).
-     */
+    /** Initialisation/Résolution de la vue Webview */
     resolveWebviewView(
         webviewView: vscode.WebviewView,
         _context: vscode.WebviewViewResolveContext<unknown>,
         _token: vscode.CancellationToken
     ): void | Thenable<void> {
-        console.log("[ChatbotViewProvider] Resolving webview view...");
         this._view = webviewView;
 
+        // Configuration Webview
         webviewView.webview.options = {
             enableScripts: true,
-            localResourceRoots: [
+            localResourceRoots: [ /* ... chemins ... */
                 vscode.Uri.joinPath(this._extensionUri, 'node_modules'),
-                vscode.Uri.joinPath(this._extensionUri, 'media'), // Standard media folder
-                vscode.Uri.joinPath(this._extensionUri, 'dist') // Allow access to bundled JS/CSS if needed
+                vscode.Uri.joinPath(this._extensionUri, 'media'),
+                vscode.Uri.joinPath(this._extensionUri, 'dist'),
+                vscode.Uri.joinPath(this._extensionUri, 'src')
             ]
         };
 
-        // Initial HTML load using the current state
+        // Nettoyage & Initialisation HTML
+        this.disposeSSEConnection();
+        while (this._disposables.length) { this._disposables.pop()?.dispose(); }
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
-        // --- Setup Message Listener ---
-        // Dispose previous listeners if any
-        while (this._disposables.length) { this._disposables.pop()?.dispose(); }
-
-        // Handle messages received from the webview's JavaScript
-        const messageSubscription = webviewView.webview.onDidReceiveMessage(
-            async (message: ChatbotMessage) => {
-                console.log("[ChatbotViewProvider] Message received from webview:", message.command);
-                await this._handleWebviewMessage(message);
-            },
-            undefined, // Use default this context
-            this._disposables // Add listener to our disposables array for cleanup
+        // Listeners
+        webviewView.webview.onDidReceiveMessage(
+            async (message: WebviewCommand) => { await this._handleWebviewMessage(message); },
+            undefined, this._disposables
         );
+        webviewView.onDidDispose(() => { this.handleDispose(); }, null, this._disposables);
 
-        // --- Setup View Disposal Handler ---
-        // Handle cleanup when the view is closed by the user or VS Code
-        const disposeSubscription = webviewView.onDidDispose(() => {
-            console.log('[ChatbotViewProvider] Webview disposed.');
-            if (this._view === webviewView) {
-                this._view = undefined;
-            }
-            // The main dispose method will handle cleaning up listeners in _disposables
-        }, null, this._disposables); // Also add this listener to disposables
-
-        console.log("[ChatbotViewProvider] Webview view resolved and listeners attached.");
-        // The webview script will request initial data ('loadInitialData') if needed.
     }
 
-    /**
-     * Handles messages received from the webview's JavaScript.
-     * @param message - The message object from the webview.
-     */
-    private async _handleWebviewMessage(message: ChatbotMessage): Promise<void> {
+    /** Gestionnaire central des commandes webview */
+    private async _handleWebviewMessage(message: WebviewCommand): Promise<void> {
         switch (message.command) {
             case 'sendMessage':
-                if (message.text) {
-                    // Note: We don't need message.vulnerability here anymore,
-                    // as the selection is stored in this._state.selectedVulnerability
-                    await this._handleSendMessage(message.text);
-                } else {
-                    console.warn("[ChatbotViewProvider] sendMessage received without text.");
-                }
+                if (message.text) { await this._handleSendMessage(message.text); }
+                else { console.warn("sendMessage command without text."); }
                 return;
-
-            case 'loadInitialData': // Triggered by the webview script on load if data is missing
-                if (!this._state.vulnerabilities.length && !this._state.isVulnListLoading) {
+            case 'loadInitialData':
+                if (this._state.projectId && !this._state.vulnerabilities.length && !this._state.isVulnListLoading) {
                     await this._loadVulnerabilities();
-                } else {
-                    console.log("[ChatbotViewProvider] Skipping loadInitialData: Data already present or loading.");
-                    // Ensure the webview has the current state even if we don't load
-                    this._notifyWebviewState();
-                }
+                } else { this._notifyWebviewState(); }
                 return;
-
-            case 'getInitialState': // Optional: If webview explicitly asks for state after load
+            case 'getInitialState':
                 this._notifyWebviewState();
                 return;
-
             case 'setSelectedVulnerability':
-                // Update the internal state with the full vulnerability object (or null)
                 this._state.selectedVulnerability = message.vulnerability ?? null;
-                console.log("[ChatbotViewProvider] State updated - Selected Vulnerability ID:", this._state.selectedVulnerability?.id ?? 'None');
-                // No need to notify webview immediately, selection context will be used on next sendMessage
-                // Or, if immediate UI feedback is desired *in the webview* upon selection, notify here:
-                // this._notifyWebviewState();
-                return;
-
-            case 'resetConversation':
-                console.log("[ChatbotViewProvider] Resetting conversation state.");
-                // Reset the conversation state
-                this._state.messages = [];
-                this._state.conversationId = null;
-                this._state.error = null;
-                this._state.selectedVulnerability = null; // Also deselect the related vulnerability
-                this._state.isLoading = false; // Ensure not blocked in loading
-
-                // Notify the webview with the reset state
-                // This will clear the messages in the UI and prepare for a new conversation
                 this._notifyWebviewState();
                 return;
-
+            case 'resetConversation':
+                this.resetConversationState();
+                return;
             default:
-                console.warn("[ChatbotViewProvider] Received unknown command:", message.command);
+                console.warn(`Unknown command: ${message.command}`);
                 return;
         }
     }
 
-    /**
-      * Handles sending a message text to the AI service.
-      * Manages starting a new conversation or continuing an existing one.
-      * Updates the state based on the API response, **removing the last message received.**
-      *
-      * @param {string} text - The user's message text.
-      * @returns {Promise<void>} A promise that resolves when the operation is complete.
-      */
+    /** Gère l'envoi d'un message utilisateur (logique POST -> SSE) */
     private async _handleSendMessage(text: string): Promise<void> {
-        // Prevent concurrent requests or requests without a project ID
-        if (this._state.isLoading) {
-            console.warn("[ChatbotViewProvider] Send message blocked: Already processing.");
-            vscode.window.showWarningMessage("Please wait for the current response.");
-            return;
-        }
-        if (!this._state.projectId) {
-            this._state.error = "Cannot send message: Project ID is not configured.";
-            this._notifyWebviewState(); // Notify UI about the error
-            return;
-        }
+        // Pré-conditions
+        if (this._state.isLoading || this._state.isStreaming) { vscode.window.showWarningMessage("Please wait..."); return; }
+        if (!this._state.projectId) { this._state.error = "Project ID missing."; this._notifyWebviewState(); return; }
+        if (this._state.limitReachedError) { return; }
 
-        // Set loading state and clear previous errors
-        this._state.isLoading = true;
-        this._state.error = null;
-
-        // 1. Optimistic UI Update: Show the user's message immediately
+        // Préparation état
+        this.disposeSSEConnection();
+        this._state.isLoading = true; this._state.error = null; this._state.limitReachedError = null; this._state.assistantStreamContent = "";
         const userMessage: MessageDto = new MessageDto('user', text, new Date());
-        const optimisticMessages = [...this._state.messages, userMessage];
-        this._notifyWebviewState({ messages: optimisticMessages, isLoading: true, error: null }); // Show user msg + loading
+        this._state.messages = [...this._state.messages, userMessage];
+        this._notifyWebviewState(); // MàJ optimiste
 
+        // Appel API POST
         try {
-            let finalApiResponse: ConversationResponseDto;
-            let messagesFromApi: MessageDto[] = []; // Variable pour stocker les messages bruts de l'API
-            const isContextual = !!this._state.selectedVulnerability; // Check if a vulnerability is selected in the state
-
-            // --- Determine whether to start or continue the conversation ---
-            if (this._state.conversationId) {
-                // --- Case 1: Continue Existing Conversation ---
-                console.log(`[ChatbotViewProvider] Continuing conversation ${this._state.conversationId}`);
-                const request = new AddMessageConversationRequestDto(
-                    this._state.conversationId,
-                    text,
-                    this._state.projectId
-                );
-                finalApiResponse = await this._apiService.continueConversation(request);
-                messagesFromApi = finalApiResponse?.messages || []; // Récupérer les messages bruts
-                this._state.conversationId = finalApiResponse?.conversationId || this._state.conversationId; // Mettre à jour l'ID
-
-            } else {
-                // --- Case 2: Start New Conversation ---
-                console.log(`[ChatbotViewProvider] Starting new conversation. Contextual: ${isContextual}`);
-
-                // a) Call startConversation API to initialize and get a conversation ID
-                const startRequest = new StartConversationRequestDto({
+            let conversationIdToStream: string | null = null;
+            if (this._state.conversationId) { // Continuer
+                const request = new AddMessageConversationRequestDto(this._state.conversationId, text, this._state.projectId);
+                const response = await this._apiService.continueConversation(request);
+                conversationIdToStream = response.conversationId;
+            } else { // Démarrer
+                const isContextual = !!this._state.selectedVulnerability;
+                const request = new StartConversationRequestDto({
                     projectId: this._state.projectId,
                     isVulnerabilityConversation: isContextual,
                     vulnerabilityId: this._state.selectedVulnerability?.id,
-                    vulnerabilityType: this._state.selectedVulnerability?.vulnerability?.vulnerabilityType as ('sast' | 'iac' | undefined)
+                    vulnerabilityType: (isContextual && (this._state.selectedVulnerability?.vulnerability?.vulnerabilityType === 'sast' || this._state.selectedVulnerability?.vulnerability?.vulnerabilityType === 'iac' || this._state.selectedVulnerability?.vulnerability?.vulnerabilityType === 'sca'))
+                        ? this._state.selectedVulnerability.vulnerability.vulnerabilityType : undefined
                 });
-                const startResponse = await this._apiService.startConversation(startRequest);
-                if (!startResponse?.conversationId) {
-                    throw new Error("Failed to start conversation: No conversation ID received.");
-                }
-                const newConversationId = startResponse.conversationId; // Store the newly created ID
-
-                // b) Call continueConversation API with the first user message
-                console.log(`[ChatbotViewProvider] Sending first message to new conversation ${newConversationId}`);
-                const continueRequest = new AddMessageConversationRequestDto(
-                    newConversationId,
-                    text, // The first message text
-                    this._state.projectId
-                );
-                finalApiResponse = await this._apiService.continueConversation(continueRequest);
-                messagesFromApi = finalApiResponse?.messages || []; // Récupérer les messages bruts
-                this._state.conversationId = finalApiResponse?.conversationId || newConversationId; // Mettre à jour l'ID
+                const response = await this._apiService.startConversation(request);
+                this._state.conversationId = response.conversationId;
+                conversationIdToStream = response.conversationId;
             }
 
-            // --- MODIFICATION : Supprimer systématiquement le DERNIER message de la réponse ---
-            let finalMessagesToDisplay = messagesFromApi; // Commencer avec les messages de l'API
-            if (finalMessagesToDisplay.length > 0) {
-                console.log(`[ChatbotViewProvider] Removing last message from the API response (length before: ${finalMessagesToDisplay.length}).`);
-                // Crée un nouveau tableau contenant tous les éléments sauf le dernier
-                finalMessagesToDisplay = finalMessagesToDisplay.slice(0, -1);
-                console.log(`[ChatbotViewProvider] Length after removing last message: ${finalMessagesToDisplay.length}.`);
-            } else {
-                console.log("[ChatbotViewProvider] API response was empty, no message to remove.");
-            }
-            // --- FIN MODIFICATION ---
+            // Démarrer SSE si POST OK
+            if (conversationIdToStream) {
+                this._state.isLoading = false; this._notifyWebviewState();
+                // Utilisation de la nouvelle méthode avec 'eventsource-client'
+                this._startSseStreamWithClientLib(conversationIdToStream); // Note: ne pas await ici car la boucle tourne en arrière-plan
+            } else { throw new Error("Failed to obtain conversation ID."); }
 
-            // Mettre à jour l'état avec la liste des messages modifiée
-            this._state.messages = finalMessagesToDisplay;
-
-            // --- Optional: Clear vulnerability selection after use ---
-            // if (isContextual) {
-            //     this._state.selectedVulnerability = null;
-            // }
-
-        } catch (error: any) {
-            // --- Error Handling ---
-            console.error("[ChatbotViewProvider] Error during AI conversation:", error);
-            this._state.error = error.message || "Failed to communicate with the Security Champion.";
-            // Revert messages to the optimistic state (user message only) to provide context for the error
-            this._state.messages = optimisticMessages;
-            // Reset conversation ID on error? Or keep it? Resetting seems safer.
-            this._state.conversationId = null;
-
-        } finally {
-            // --- Finalization ---
-            this._state.isLoading = false; // Always ensure loading state is reset
-            // Notify the webview with the final state (success or error)
+        } catch (error: any) { // Erreur pendant POST
+            console.error("[ChatbotViewProvider] Error during sendMessage POST phase:", error);
+            this._state.error = error.message || "Failed to send message.";
+            this._state.isLoading = false; this._state.isStreaming = false;
             this._notifyWebviewState();
         }
     }
 
     /**
-     * Loads SAST and IaC vulnerabilities for the context selector dropdown.
-     * Updates the internal state (`vulnerabilities`) and notifies the webview.
+     * Établit et gère la connexion SSE en utilisant 'eventsource-client'.
+     * Utilise un itérateur asynchrone pour traiter les messages.
+     * @param conversationId L'ID de la conversation à streamer.
      */
-    private async _loadVulnerabilities(): Promise<void> {
-        if (!this._state.projectId) {
-            this._state.error = "Project ID is not set. Cannot load vulnerabilities.";
-            console.warn("[ChatbotViewProvider] Cannot load vulnerabilities: Project ID missing.");
-            this._notifyWebviewState();
-            return;
-        }
-        if (this._state.isVulnListLoading) {
-            console.log("[ChatbotViewProvider] Vulnerability load already in progress.");
-            return; // Prevent concurrent loads
-        }
+    private async _startSseStreamWithClientLib(conversationId: string): Promise<void> {
+        if (!this._state.projectId) { this._state.error = "Cannot connect: Project ID missing."; this._notifyWebviewState(); return; }
+        this.disposeSSEConnection(); // Ferme connexion précédente
+        const apiKey = await this._apiService.getApiKey();
+        if (!apiKey) { this._state.error = "Cannot connect: API Key missing."; this._notifyWebviewState(); return; }
 
-        console.log("[ChatbotViewProvider] Loading vulnerabilities for context...");
-        this._state.isVulnListLoading = true;
-        this._state.error = null; // Clear previous errors related to loading
-        this._notifyWebviewState(); // Notify UI: vuln list is loading
+        const baseUrl = getApiBaseUrl();
+        const sseUrl = `${baseUrl}/project/${this._state.projectId}/ai/conversation/${conversationId}/stream`;
+
+        // Reset état streaming
+        this._state.isStreaming = false; // Sera mis à true au premier delta reçu
+        this._state.assistantStreamContent = "";
+        this._state.error = null;
+        this._notifyWebviewState();
+
+        let _streamEndedIntentionally = false;
 
         try {
-            // Fetch SAST and IaC results in parallel
-            const [sastResults, iacResults] = await Promise.all([
-                this._apiService.getScanResults(this._state.projectId, 'sast', { pageSizeNumber: 500 })
-                    .catch(e => { console.error("Failed to load SAST results:", e); return null; }), // Gracefully handle individual failures
-                this._apiService.getScanResults(this._state.projectId, 'iac', { pageSizeNumber: 500 })
-                    .catch(e => { console.error("Failed to load IaC results:", e); return null; })
-            ]);
+            const options = {
+                url: sseUrl,
+                headers: { 'X-API-Key': apiKey },
+                retry: 0
+            };
+            const es = createEventSource(options);
+            this._eventSourceInstance = es;
 
-            // Combine results, filter out nulls and ensure vulnerabilities array exists
-            const combinedVulnerabilities = [
-                ...(sastResults?.vulnerabilities || []),
-                ...(iacResults?.vulnerabilities || [])
-            ].filter(v => v != null); // Filter out potential nulls if a fetch failed
-
-            this._state.vulnerabilities = combinedVulnerabilities; // Update internal state with full list
-            console.log(`[ChatbotViewProvider] Loaded ${this._state.vulnerabilities.length} SAST/IaC vulnerabilities.`);
-
-        } catch (error: any) { // Catch errors not handled by individual catches (e.g., Promise.all itself)
-            console.error("[ChatbotViewProvider] Failed to load vulnerabilities:", error);
-            this._state.error = "Failed to load vulnerabilities list.";
-            this._state.vulnerabilities = []; // Ensure list is empty on error
-        } finally {
-            this._state.isVulnListLoading = false;
-            // Notify webview with the updated list (or error state) and loading=false
+            this._state.isStreaming = true; 
             this._notifyWebviewState();
+
+            for await (const event of es) {
+                 try {
+                    if (typeof event.data !== 'string' || !event.data) {
+                        console.warn("[ChatbotViewProvider] SSE received non-string or empty data:", event.data);
+                        continue; // Ignorer cet événement
+                    }
+
+                    const parsedData: SsePayload = JSON.parse(event.data);
+
+                    switch (parsedData.type) {
+                        case 'delta':
+                            if (!this._state.isStreaming) { this._state.isStreaming = true; }
+                            this._state.assistantStreamContent += parsedData.payload;
+                            this._notifyWebviewState();
+                            break;
+                        case 'error': 
+                            const errPayload = parsedData.payload as SseErrorPayload;
+                            const errMsg = errPayload.message || "Unknown stream error";
+                            console.error(`SSE Error Payload: ${errPayload.code} - ${errMsg}`);
+                            if (errPayload.code === 403 && errMsg.toLowerCase().includes('limit reached')) { this._state.limitReachedError = errMsg; }
+                            else { this._state.error = `Streaming Error (${errPayload.code || 'SSE'}): ${errMsg}`; }
+                            this._state.isStreaming = false;
+                            _streamEndedIntentionally = true;
+                            this._notifyWebviewState();
+                            return;
+                        case 'done':
+                             this._eventSourceInstance?.close(); // <<< Close FIRST
+                            _streamEndedIntentionally = true;
+                             this._state.isStreaming = false; // <<< Set state AFTER close
+                             this._notifyWebviewState();      // <<< Notify AFTER close
+                             break; // <<< Exit the 'for await' loop explicitly
+                        case 'history': 
+                            if (Array.isArray(parsedData.payload) && this._state.messages.length <= 1) {
+                                this._state.messages = parsedData.payload;
+                                this._notifyWebviewState();
+                            }
+                            break;
+                        case 'info': 
+                            break;
+                        default: 
+                            break;
+                    }
+                 } catch (parseError) {
+                     this._state.error = "Failed to parse message.";
+                     this._state.isStreaming = false;
+                     this._notifyWebviewState();
+                     _streamEndedIntentionally = true;
+                     this._eventSourceInstance?.close();
+                     return; 
+                 }
+            }
+
+        } catch (connectionError: any) {
+             let errorMessage = "Chat connection failed.";
+             if (connectionError instanceof Error) { errorMessage = connectionError.message; }
+             if (errorMessage.includes("401")) { errorMessage = "Authentication failed (401)."; }
+             if (!_streamEndedIntentionally) {
+                if (!this._state.limitReachedError) { this._state.error = errorMessage; }
+             }
+        } finally {
+             if (this._state.assistantStreamContent.trim() && !this._state.error && !this._state.limitReachedError) {
+                const finalMsg = new MessageDto('assistant', this._state.assistantStreamContent.trim(), new Date());
+                const lastMsg = this._state.messages[this._state.messages.length - 1];
+                if (!(lastMsg?.role === 'assistant' && lastMsg.content === finalMsg.content)) { this._state.messages.push(finalMsg); }
+             }
+            
+             if (this._eventSourceInstance) {
+                this._eventSourceInstance.close(); // Ensure closure if not already done
+                this._eventSourceInstance = null;
+             }
+
+             this._state.isStreaming = false; // Assure que c'est false
+             this._state.assistantStreamContent = "";
+
+             this._notifyWebviewState(); 
         }
     }
 
-    /**
-     * Prepares the simplified vulnerability list suitable for the webview dropdown.
-     * @param fullVulnerabilities - The list of DetailedVulnerability objects.
-     * @returns An array of VulnerabilityInfoForWebview objects.
-     */
+    /** Charge les vulnérabilités (SAST/IaC) */
+    private async _loadVulnerabilities(): Promise<void> {
+        if (!this._state.projectId || this._state.isVulnListLoading) return;
+        this._state.isVulnListLoading = true; this._state.error = null;
+        this._notifyWebviewState();
+        try {
+            const [sastResults, iacResults] = await Promise.all([
+                this._apiService.getScanResults(this._state.projectId, 'sast', { pageSizeNumber: 500 }).catch(e => { console.error("SAST load failed:", e); return null; }),
+                this._apiService.getScanResults(this._state.projectId, 'iac', { pageSizeNumber: 500 }).catch(e => { console.error("IaC load failed:", e); return null; })
+            ]);
+            const combined = [...(sastResults?.vulnerabilities || []), ...(iacResults?.vulnerabilities || [])].filter(v => v != null);
+            this._state.vulnerabilities = combined;
+        } catch (error: any) {
+            console.error("[ChatbotViewProvider] Error loading vulnerabilities:", error);
+            this._state.error = "Failed to load vulnerabilities list."; this._state.vulnerabilities = [];
+        } finally {
+            this._state.isVulnListLoading = false; this._notifyWebviewState();
+        }
+    }
+
+    /** Prépare la liste simplifiée pour le dropdown */
     private _prepareVulnerabilitiesForWebview(fullVulnerabilities: DetailedVulnerability[]): VulnerabilityInfoForWebview[] {
-        // Note: HTML escaping should happen in getChatbotHtml before injection
         return (fullVulnerabilities || [])
-            .filter(v => v?.vulnerability?.vulnerabilityType === 'sast' || v?.vulnerability?.vulnerabilityType === 'iac')
+            .filter(v => v?.vulnerability?.vulnerabilityType === 'sast' || v?.vulnerability?.vulnerabilityType === 'iac' || v?.vulnerability?.vulnerabilityType === 'sca')
             .map(vuln => {
                 let fullPath = '';
-                // Safely access path property
-                if (vuln && typeof vuln === 'object' && 'path' in vuln && vuln.path) {
-                    fullPath = vuln.path;
-                }
+                // Vérification type-safe de 'path'
+                if (vuln && 'path' in vuln && typeof vuln.path === 'string') { fullPath = vuln.path; }
                 const shortPath = fullPath ? path.basename(fullPath) : '(path unknown)';
-                return {
-                    id: vuln.id,
-                    // Raw values here, escaping done in getChatbotHtml
-                    name: vuln.vulnerability?.name || vuln.id,
-                    type: vuln.vulnerability.vulnerabilityType as 'sast' | 'iac',
-                    fullPath: fullPath,
-                    shortPath: shortPath
-                };
+                return { id: vuln.id, name: vuln.vulnerability?.name || vuln.id, type: vuln.vulnerability.vulnerabilityType as 'sast' | 'iac' | 'sca', fullPath: fullPath, shortPath: shortPath };
             });
     }
 
-    /**
-     * Sends the current state (or a partial update) to the webview via `postMessage`.
-     * Transforms the internal state into the `StateForWebview` format.
-     * @param partialState - Optional partial state to merge for optimistic updates.
-     */
-    private _notifyWebviewState(partialState: Partial<InternalProviderState> = {}) {
-        if (this._view?.webview) {
-            // Merge partial state with current internal state
-            const mergedInternalState = { ...this._state, ...partialState };
-
-            // Prepare the payload for the webview
-            const simplifiedVulns = this._prepareVulnerabilitiesForWebview(mergedInternalState.vulnerabilities);
-
-            const statePayloadForPostMessage: StateForWebview = {
-                messages: mergedInternalState.messages,
-                isLoading: mergedInternalState.isLoading,
-                isVulnListLoading: mergedInternalState.isVulnListLoading,
-                error: mergedInternalState.error,
-                vulnerabilities: simplifiedVulns, // Send the prepared simplified list
-                vulnerabilitiesFull: mergedInternalState.vulnerabilities, // Send the full list separately
-                selectedVulnerabilityId: mergedInternalState.selectedVulnerability?.id || null, // Send only the ID
-                conversationId: mergedInternalState.conversationId,
-                projectId: mergedInternalState.projectId
-            };
-
-            // Post the message to the webview's script
-            console.log("[ChatbotViewProvider] Notifying webview state.");
-            this._view.webview.postMessage({ command: 'updateState', state: statePayloadForPostMessage });
-        } else {
-            console.warn("[ChatbotViewProvider] Cannot notify webview: View not available.");
-        }
+    /** Notifie l'état complet à la Webview */
+    private _notifyWebviewState() {
+        if (!this._view?.webview) { return; }
+        const currentState = this._state;
+        const simplifiedVulns = this._prepareVulnerabilitiesForWebview(currentState.vulnerabilities);
+        const statePayload: StateForWebview = {
+            messages: currentState.messages, isLoading: currentState.isLoading, isStreaming: currentState.isStreaming,
+            isVulnListLoading: currentState.isVulnListLoading, error: currentState.error, limitReachedError: currentState.limitReachedError,
+            assistantStreamContent: currentState.assistantStreamContent, vulnerabilities: simplifiedVulns,
+            vulnerabilitiesFull: currentState.vulnerabilities, selectedVulnerabilityId: currentState.selectedVulnerability?.id || null,
+            conversationId: currentState.conversationId, projectId: currentState.projectId
+         };
+        const command: ProviderCommand = { command: 'updateState', state: statePayload };
+        this._view.webview.postMessage(command);
     }
 
-    /**
-     * Generates the complete HTML content for the webview.
-     * This is used for the initial load and potentially for full refreshes if needed.
-     * @param webview - The webview instance.
-     * @returns The HTML string.
-     */
+    /** Génère le HTML */
     private _getHtmlForWebview(webview: vscode.Webview): string {
-        console.log("[ChatbotViewProvider] Generating HTML for webview.");
-        // Pass the current internal state to the HTML generation function.
-        // getChatbotHtml will handle preparing the initial JS state based on this.
         return getChatbotHtml(webview, this.context.extensionUri, this._state);
     }
 
-    /**
-     * Cleans up resources when the provider is disposed (e.g., extension deactivation).
-     * Disposes all registered disposables (listeners).
-     */
-    dispose() {
-        console.log("[ChatbotViewProvider] Disposing.");
-        // Dispose all disposables registered in the _disposables array
-        while (this._disposables.length) {
-            const disposable = this._disposables.pop();
-            if (disposable) {
-                disposable.dispose();
-            }
+    /** Ferme la connexion SSE et finalise le message si nécessaire */
+    private disposeSSEConnection() {
+        // Finaliser message si un stream était en cours au moment de l'appel
+        if (this._state.isStreaming && this._state.assistantStreamContent.trim()) {
+            const finalMsg = new MessageDto('assistant', this._state.assistantStreamContent.trim(), new Date());
+            const lastMsg = this._state.messages[this._state.messages.length - 1];
+            if (!(lastMsg?.role === 'assistant' && lastMsg.content === finalMsg.content)) { this._state.messages.push(finalMsg); }
         }
-        this._view = undefined; // Clear reference to the view
+        // Fermer connexion `eventsource-client`
+        if (this._eventSourceInstance) {
+            this._eventSourceInstance.close(); // Utiliser la méthode close() de l'instance
+            this._eventSourceInstance = null;
+        }
+        // Reset état streaming et notifier si l'état était actif
+        if (this._state.isStreaming || this._state.assistantStreamContent) {
+            this._state.isStreaming = false; this._state.assistantStreamContent = "";
+            this._notifyWebviewState(); // Notifier l'arrêt
+        }
+    }
+
+    /** Réinitialise l'état de la conversation */
+    private resetConversationState() {
+        this.disposeSSEConnection(); // Ferme SSE et finalise
+        // Reset état conversationnel
+        this._state.messages = []; this._state.conversationId = null; this._state.error = null;
+        this._state.limitReachedError = null; this._state.selectedVulnerability = null;
+        this._state.isLoading = false; this._state.isStreaming = false; this._state.assistantStreamContent = "";
+        this._notifyWebviewState(); // Notifier reset
+    }
+
+    /** Gère la destruction de la vue */
+    private handleDispose() {
+        this.disposeSSEConnection();
+        this._view = undefined;
+    }
+
+    /** Méthode de l'interface vscode.Disposable */
+    dispose() {
+        this.handleDispose(); // Nettoyage interne
+        // Nettoyage listeners VS Code
+        while (this._disposables.length) { this._disposables.pop()?.dispose(); }
     }
 }

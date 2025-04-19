@@ -24,7 +24,6 @@ export async function showVulnerabilityDetailsCommand(
         return; 
     }
     
-    console.log(`[DetailsCommand] Received request for ID: ${vulnerabilityDataFromList.id}`);
     
     if (USE_MOCK_DATA_DETAILS) { /* ... logique mock ... */
         try {
@@ -32,11 +31,10 @@ export async function showVulnerabilityDetailsCommand(
             const mockDetailedResponse = createMockDetailsResponse(vulnerabilityDataFromList);
             detailsViewProvider.updateContent(mockDetailedResponse);
         } catch (mockError: any) {
-            console.error("Error creating or showing mock details:", mockError);
             vscode.window.showErrorMessage(`Failed to show mock details: ${mockError.message}`);
             detailsViewProvider.updateContent(undefined);
         }
-    } else { /* ... logique API réelle ... */
+    } else {
         const projectId = getProjectId();
         if (!projectId) { 
             vscode.window.showErrorMessage('Project ID not configured'); 
@@ -65,7 +63,6 @@ export async function showVulnerabilityDetailsCommand(
             return; 
         }
         
-        console.log(`[DetailsCommand] Using Real API Details for ${scanType} vulnerability: ${vulnerabilityId}`);
         try {
             await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Window, title: `Loading details...`}, 
@@ -75,7 +72,6 @@ export async function showVulnerabilityDetailsCommand(
                 }
             );
         } catch (error: any) {
-            console.error(`Failed to get or show real details for ${vulnerabilityId}:`, error);
             vscode.window.showErrorMessage(`Could not load vulnerability details: ${error.message}`);
             detailsViewProvider.updateContent(undefined);
         }
@@ -96,7 +92,6 @@ export async function openFileLocationCommand(filePath?: string, lineNumber?: nu
     const position = new vscode.Position(zeroBasedLine, 0);
 
     try {
-        console.log(`Opening file: ${filePath} at line ${line} (0-based: ${zeroBasedLine})`);
         const uri = vscode.Uri.file(filePath);
         const document = await vscode.workspace.openTextDocument(uri);
 
@@ -115,10 +110,8 @@ export async function openFileLocationCommand(filePath?: string, lineNumber?: nu
         );
         // --- FIN CORRECTION ---
 
-        console.log(`File ${path.basename(filePath)} opened and revealed.`);
 
     } catch (error: any) {
-        console.error(`Failed to open file location: ${filePath}:${line}`, error);
         const simpleFileName = path.basename(filePath);
         vscode.window.showErrorMessage(`Could not open file "${simpleFileName}": ${error.message}`);
     }

@@ -1,7 +1,8 @@
 /* src/ui/html/partials/chatbot.css */
 
 /* Import Codicon font definitions - Placeholder will be replaced by actual font CSS */
-/* {{codiconsFontStyles}} */ /* This placeholder wasn't used before, but could be if needed */
+/* {{codiconsFontStyles}} */
+/* This placeholder wasn't used before, but could be if needed */
 
 /* --- Base Styles & Variables --- */
 :root {
@@ -14,7 +15,8 @@
     --button-background: rgb(120, 69, 255);
     --button-foreground: var(--vscode-button-foreground);
     --button-hover-background: var(--vscode-button-hoverBackground);
-    --button-border: var(--vscode-button-border, var(--vscode-input-border)); /* Fallback for border */
+    --button-border: var(--vscode-button-border, var(--vscode-input-border));
+    /* Fallback for border */
     --dropdown-background: var(--vscode-dropdown-background);
     --dropdown-foreground: var(--vscode-dropdown-foreground);
     --dropdown-border: var(--vscode-dropdown-border);
@@ -26,23 +28,31 @@
     --link-color: var(--vscode-textLink-foreground);
     --code-background: rgba(var(--vscode-editor-foreground-rgb), 0.08);
     --pre-background: rgba(var(--vscode-editor-foreground-rgb), 0.06);
-    --message-user-bg: var(--vscode-editorWidget-background); /* Or choose another suitable color */
-    --message-ai-bg: var(--vscode-sideBar-background); /* Or textBlockQuote background */
-    --message-ai-border: var(--vscode-panel-border); /* Or textBlockQuote border */
+    --message-user-bg: var(--vscode-editorWidget-background);
+    /* Or choose another suitable color */
+    --message-ai-bg: var(--vscode-sideBar-background);
+    /* Or textBlockQuote background */
+    --message-ai-border: var(--vscode-panel-border);
+    /* Or textBlockQuote border */
     --scrollbar-thumb-bg: var(--vscode-scrollbarSlider-background);
     --scrollbar-thumb-hover-bg: var(--vscode-scrollbarSlider-hoverBackground);
     --scrollbar-thumb-active-bg: var(--vscode-scrollbarSlider-activeBackground);
 }
-html, body {
+
+html,
+body {
     height: 100%;
     margin: 0;
     padding: 0;
-    overflow: hidden; /* Prevent body scroll, handle scrolling in containers */
+    overflow: hidden;
+    /* Prevent body scroll, handle scrolling in containers */
     font-family: var(--vscode-font-family);
     font-size: var(--vscode-font-size);
     color: var(--text-color);
-    background-color: var(--vscode-sideBar-background); /* Match sidebar bg */
+    background-color: var(--vscode-sideBar-background);
+    /* Match sidebar bg */
 }
+
 body {
     display: flex;
     flex-direction: column;
@@ -52,12 +62,16 @@ body {
 #chat-container {
     display: flex;
     flex-direction: column;
-    flex-grow: 1; /* Take remaining height */
+    flex-grow: 1;
+    /* Take remaining height */
     padding: 10px;
     box-sizing: border-box;
-    gap: 10px; /* Space between elements */
-    overflow: hidden; /* Prevent container overflow */
-     min-height: 0; /* Important for flex shrinking */
+    gap: 10px;
+    /* Space between elements */
+    overflow: hidden;
+    /* Prevent container overflow */
+    min-height: 0;
+    /* Important for flex shrinking */
 }
 
 /* --- Chat Header --- */
@@ -105,26 +119,32 @@ body {
     border-radius: 4px;
     padding: 8px;
     background-color: var(--input-background);
-    flex-shrink: 0; /* Prevent shrinking */
-    /* max-height: 35%; */ /* Limit height if needed */
+    flex-shrink: 0;
+    /* Prevent shrinking */
+    /* max-height: 35%; */
+    /* Limit height if needed */
     display: flex;
     flex-direction: column;
     gap: 5px;
-    transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out, height 0.2s ease-in-out, padding 0.2s ease-in-out, border-width 0.2s ease-in-out; /* Smooth hide/show */
+    transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out, height 0.2s ease-in-out, padding 0.2s ease-in-out, border-width 0.2s ease-in-out;
+    /* Smooth hide/show */
     transform: scaleY(1);
-     transform-origin: top;
-     opacity: 1;
+    transform-origin: top;
+    opacity: 1;
 }
+
 #vuln-selector.hidden {
-     transform: scaleY(0);
-     opacity: 0;
-     height: 0;
-     padding-top: 0;
-     padding-bottom: 0;
-     border-width: 0;
-     margin-bottom: -10px; /* Adjust negative margin to compensate gap */
-     overflow: hidden;
+    transform: scaleY(0);
+    opacity: 0;
+    height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-width: 0;
+    margin-bottom: -10px;
+    /* Adjust negative margin to compensate gap */
+    overflow: hidden;
 }
+
 #vuln-selector h4 {
     margin: 0 0 5px 0;
     font-size: 0.9em;
@@ -134,6 +154,7 @@ body {
     align-items: center;
     gap: 5px;
 }
+
 #vuln-select {
     width: 100%;
     padding: 6px 8px;
@@ -145,16 +166,21 @@ body {
     font-size: 0.95em;
     cursor: pointer;
 }
+
 #vuln-select:focus {
     border-color: var(--focus-border);
-    outline: 1px solid var(--focus-border); /* More visible focus */
-     outline-offset: -1px;
+    outline: 1px solid var(--focus-border);
+    /* More visible focus */
+    outline-offset: -1px;
 }
+
 #vuln-select optgroup {
     font-weight: bold;
     font-style: italic;
-    color: var(--secondary-text-color); /* Make optgroup label slightly different */
+    color: var(--secondary-text-color);
+    /* Make optgroup label slightly different */
 }
+
 #vuln-select option:disabled {
     color: var(--secondary-text-color);
     font-style: italic;
@@ -162,36 +188,47 @@ body {
 
 /* --- Messages Area --- */
 #messages {
-    flex-grow: 1; /* Take available space */
-    overflow-y: auto; /* Enable vertical scroll */
+    flex-grow: 1;
+    /* Take available space */
+    overflow-y: auto;
+    /* Enable vertical scroll */
     padding: 8px;
     border: 1px solid var(--border-color);
     border-radius: 4px;
-    background-color: var(--vscode-editor-background); /* Use editor background for contrast */
-     min-height: 100px; /* Ensure it has some height */
-     margin-bottom: 5px; /* Space before input area */
-     /* Custom Scrollbar */
-     scrollbar-width: thin;
-     scrollbar-color: var(--scrollbar-thumb-bg) transparent;
+    background-color: var(--vscode-editor-background);
+    /* Use editor background for contrast */
+    min-height: 100px;
+    /* Ensure it has some height */
+    margin-bottom: 5px;
+    /* Space before input area */
+    /* Custom Scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb-bg) transparent;
 }
- #messages::-webkit-scrollbar {
-     width: 8px;
- }
- #messages::-webkit-scrollbar-track {
-     background: transparent;
- }
- #messages::-webkit-scrollbar-thumb {
-     background-color: var(--scrollbar-thumb-bg);
-     border-radius: 4px;
-     border: 2px solid transparent; /* Creates padding around thumb */
-      background-clip: content-box;
- }
- #messages::-webkit-scrollbar-thumb:hover {
-     background-color: var(--scrollbar-thumb-hover-bg);
- }
- #messages::-webkit-scrollbar-thumb:active {
-      background-color: var(--scrollbar-thumb-active-bg);
- }
+
+#messages::-webkit-scrollbar {
+    width: 8px;
+}
+
+#messages::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#messages::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb-bg);
+    border-radius: 4px;
+    border: 2px solid transparent;
+    /* Creates padding around thumb */
+    background-clip: content-box;
+}
+
+#messages::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover-bg);
+}
+
+#messages::-webkit-scrollbar-thumb:active {
+    background-color: var(--scrollbar-thumb-active-bg);
+}
 
 
 /* --- Individual Messages --- */
@@ -199,132 +236,192 @@ body {
     display: flex;
     gap: 8px;
     margin-bottom: 12px;
-    max-width: 95%; /* Prevent messages from taking full width */
-    align-items: flex-start; /* Align icon and content block top */
+    max-width: 95%;
+    /* Prevent messages from taking full width */
+    align-items: flex-start;
+    /* Align icon and content block top */
 }
+
 .message-icon {
-    font-size: 1.1em; /* Codicon size */
-    margin-top: 4px; /* Align icon nicely with first line of text */
+    font-size: 1.1em;
+    /* Codicon size */
+    margin-top: 4px;
+    /* Align icon nicely with first line of text */
     flex-shrink: 0;
     opacity: 0.8;
-    color: var(--secondary-text-color); /* Dim the icon slightly */
+    color: var(--secondary-text-color);
+    /* Dim the icon slightly */
 }
+
 /* User messages align right */
 .message-user {
-    margin-left: auto; /* Push to the right */
-    flex-direction: row-reverse; /* Icon on the right */
+    margin-left: auto;
+    /* Push to the right */
+    flex-direction: row-reverse;
+    /* Icon on the right */
 }
+
 /* AI messages align left (default) */
 .message-ai {
-    margin-right: auto; /* Keep pushed to the left */
+    margin-right: auto;
+    /* Keep pushed to the left */
 }
+
 .message-content {
     padding: 8px 12px;
     border-radius: 10px;
     font-size: 0.95em;
     line-height: 1.5;
-    word-wrap: break-word; /* Wrap long words */
-    position: relative; /* For timestamp positioning or other elements */
-     box-shadow: var(--vscode-widget-shadow) 0px 2px 8px; /* Subtle shadow */
+    word-wrap: break-word;
+    /* Wrap long words */
+    position: relative;
+    /* For timestamp positioning or other elements */
+    box-shadow: var(--vscode-widget-shadow) 0px 2px 8px;
+    /* Subtle shadow */
 }
+
 .message-user .message-content {
     background-color: var(--message-user-bg);
-    border-top-right-radius: 2px; /* Speech bubble effect */
-     color: var(--vscode-editorWidget-foreground); /* Ensure text color contrasts */
+    border-top-right-radius: 2px;
+    /* Speech bubble effect */
+    color: var(--vscode-editorWidget-foreground);
+    /* Ensure text color contrasts */
 }
+
 .message-ai .message-content {
     background-color: var(--message-ai-bg);
     border: 1px solid var(--message-ai-border);
-    border-top-left-radius: 2px; /* Speech bubble effect */
-     color: var(--text-color); /* Use default text color */
+    border-top-left-radius: 2px;
+    /* Speech bubble effect */
+    color: var(--text-color);
+    /* Use default text color */
 }
+
 .message-timestamp {
     font-size: 0.7em;
     color: var(--secondary-text-color);
     margin-top: 4px;
     text-align: right;
-    display: block; /* Ensure it takes its own line if needed */
+    display: block;
+    /* Ensure it takes its own line if needed */
 }
+
 /* Adjust timestamp alignment for user messages if icon is reversed */
- .message-user .message-timestamp {
-     text-align: left;
- }
+.message-user .message-timestamp {
+    text-align: left;
+}
 
 /* --- Code Formatting --- */
 pre {
     background-color: var(--pre-background);
     padding: 10px;
     border-radius: 4px;
-    overflow-x: auto; /* Scroll long code lines */
+    overflow-x: auto;
+    /* Scroll long code lines */
     margin: 8px 0;
     font-family: var(--vscode-editor-font-family);
     font-size: 0.9em;
     border: 1px solid var(--border-color);
-     scrollbar-width: thin;
-     scrollbar-color: var(--scrollbar-thumb-bg) transparent;
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb-bg) transparent;
 }
- pre::-webkit-scrollbar { height: 8px; }
- pre::-webkit-scrollbar-thumb { background-color: var(--scrollbar-thumb-bg); border-radius: 4px; }
- pre::-webkit-scrollbar-thumb:hover { background-color: var(--scrollbar-thumb-hover-bg); }
 
-pre > code {
+pre::-webkit-scrollbar {
+    height: 8px;
+}
+
+pre::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb-bg);
+    border-radius: 4px;
+}
+
+pre::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover-bg);
+}
+
+pre>code {
     /* Reset styles for code inside pre */
     background-color: transparent !important;
     padding: 0 !important;
     border: none !important;
-    font-family: var(--vscode-editor-font-family) !important; /* Ensure font */
-    font-size: inherit !important; /* Inherit font size from pre */
-    white-space: pre-wrap !important; /* Allow wrapping within pre */
-    word-wrap: break-word !important; /* Break long words if necessary */
-     display: block; /* Ensure it behaves like a block */
+    font-family: var(--vscode-editor-font-family) !important;
+    /* Ensure font */
+    font-size: inherit !important;
+    /* Inherit font size from pre */
+    white-space: pre-wrap !important;
+    /* Allow wrapping within pre */
+    word-wrap: break-word !important;
+    /* Break long words if necessary */
+    display: block;
+    /* Ensure it behaves like a block */
 }
+
 /* Inline code (outside pre) */
 code:not(pre code) {
     background-color: var(--code-background);
     padding: 1px 4px;
     border-radius: 3px;
     font-family: var(--vscode-editor-font-family);
-     font-size: 0.9em; /* Slightly smaller */
-     color: var(--secondary-text-color); /* Different color for inline */
+    font-size: 0.9em;
+    /* Slightly smaller */
+    color: var(--secondary-text-color);
+    /* Different color for inline */
 }
 
 /* --- Input Area --- */
 #input-area {
     display: flex;
     gap: 8px;
-    flex-shrink: 0; /* Prevent shrinking */
+    flex-shrink: 0;
+    /* Prevent shrinking */
     border-top: 1px solid var(--border-color);
     padding-top: 10px;
-    align-items: flex-end; /* Align textarea bottom with button center */
+    align-items: flex-end;
+    /* Align textarea bottom with button center */
 }
+
 #message-input {
-    flex-grow: 1; /* Take available width */
+    flex-grow: 1;
+    /* Take available width */
     padding: 8px 10px;
     border: 1px solid var(--input-border);
     background-color: var(--input-background);
     color: var(--input-foreground);
     border-radius: 4px;
-    resize: vertical; /* Allow only vertical resizing */
+    resize: vertical;
+    /* Allow only vertical resizing */
     font-family: var(--vscode-font-family);
     font-size: 1em;
     line-height: 1.4;
-    min-height: 34px; /* Match button height */
-    max-height: 200px; /* Increased maximum height */
-    overflow-y: auto; /* Allow scrolling if content exceeds max-height */
+    min-height: 37px;
+    /* Match button height */
+    max-height: 200px;
+    /* Increased maximum height */
+    overflow-y: auto;
+    /* Allow scrolling if content exceeds max-height */
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb-bg) transparent;
 }
+
 #message-input:focus {
     border-color: var(--focus-border);
     outline: 1px solid var(--focus-border);
-     outline-offset: -1px;
+    outline-offset: -1px;
 }
-#message-input::-webkit-scrollbar { width: 6px; }
-#message-input::-webkit-scrollbar-thumb { background-color: var(--scrollbar-thumb-bg); border-radius: 3px; }
+
+#message-input::-webkit-scrollbar {
+    width: 6px;
+}
+
+#message-input::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb-bg);
+    border-radius: 3px;
+}
 
 #send-button {
     padding: 0 12px;
-    height: 34px; /* Match typical button height */
+    height: 55px;
+    /* Match typical button height */
     background-color: var(--button-background);
     color: var(--button-foreground);
     border: 1px solid var(--button-border);
@@ -335,18 +432,24 @@ code:not(pre code) {
     justify-content: center;
     font-weight: 600;
     transition: background-color 0.1s ease;
-    flex-shrink: 0; /* Prevent shrinking */
+    flex-shrink: 0;
+    /* Prevent shrinking */
 }
+
 #send-button:hover {
     background-color: var(--button-hover-background);
 }
+
 #send-button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-     background-color: var(--button-background); /* Prevent hover effect when disabled */
+    background-color: var(--button-background);
+    /* Prevent hover effect when disabled */
 }
+
 #send-button .codicon {
-    font-size: 1.3em; /* Make icon slightly larger */
+    font-size: 1.3em;
+    /* Make icon slightly larger */
 }
 
 /* --- Indicators --- */
@@ -358,21 +461,93 @@ code:not(pre code) {
     font-size: 0.9em;
     opacity: 0.8;
 }
+
 .loading-indicator .codicon-loading {
-     margin-right: 5px;
+    margin-right: 5px;
 }
+
 .error-message {
     background-color: var(--error-background-alpha);
     color: var(--error-foreground);
     padding: 8px 12px;
     border-radius: 4px;
-    margin: 5px 0; /* Add margin around error */
+    margin: 5px 0;
+    /* Add margin around error */
     display: flex;
     align-items: center;
     gap: 6px;
     font-size: 0.9em;
     border: 1px solid var(--error-border-alpha);
 }
+
 .error-message .codicon-error {
-     margin-right: 4px; /* Space after icon */
+    margin-right: 4px;
+    /* Space after icon */
+}
+
+/* --- Styles pour le Streaming --- */
+
+/* Style optionnel pour la bulle de message pendant le streaming (si besoin) */
+
+/* Style pour le curseur clignotant */
+.blinking-cursor {
+    display: inline-block;
+    /* Permet de lui donner une largeur/hauteur si nécessaire */
+    width: 8px;
+    /* Ajuster la largeur si désiré */
+    font-weight: bold;
+    color: var(--text-color);
+    /* Utilise la couleur du texte environnant */
+    animation: blink 1s step-end infinite;
+    margin-left: 2px;
+    /* Petit espace après le texte */
+    /* On peut aussi utiliser 'visibility' au lieu d'opacity */
+}
+
+/* Définition de l'animation de clignotement */
+@keyframes blink {
+
+    from,
+    to {
+        opacity: 1;
+        /* ou visibility: visible; */
+    }
+
+    50% {
+        opacity: 0;
+        /* ou visibility: hidden; */
+    }
+}
+
+/* Style pour le message vide initial */
+.empty-chat-message {
+    text-align: center;
+    color: var(--secondary-text-color);
+    padding: 20px;
+    font-style: italic;
+}
+
+/* Style pour les indicateurs d'information/erreur sous les messages */
+.info-message {
+    /* Appliquer aussi à .loading-indicator, .error-message si besoin */
+    text-align: center;
+    padding: 8px;
+    font-style: italic;
+    color: var(--secondary-text-color);
+    font-size: 0.9em;
+    opacity: 0.8;
+    margin-top: 5px;
+}
+
+.info-message .codicon {
+    margin-right: 5px;
+    vertical-align: middle;
+    /* Aligner l'icône avec le texte */
+}
+
+/* S'assurer que le conteneur d'indicateur ne prend pas trop de place */
+#loading-indicator-container {
+    padding: 5px 0;
+    flex-shrink: 0;
+    /* Empêche de rétrécir */
 }

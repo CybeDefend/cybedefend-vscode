@@ -70,6 +70,5 @@ export class SettingsWebviewProvider implements vscode.Disposable {
                 x.dispose();
             }
         }
-        console.log("SettingsWebviewProvider disposed.");
     }
 }

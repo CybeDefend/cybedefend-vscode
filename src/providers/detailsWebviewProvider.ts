@@ -21,7 +21,6 @@ export class DetailsWebviewViewProvider implements vscode.Disposable {
 
     constructor(private readonly context: vscode.ExtensionContext) {
         this._extensionUri = context.extensionUri;
-        console.log("[DetailsViewProvider] Initialized.");
     }
 
     /**
@@ -53,7 +52,6 @@ export class DetailsWebviewViewProvider implements vscode.Disposable {
         this._panel.webview.html = this._getHtmlForWebview(this._panel.webview);
 
         this._panel.webview.onDidReceiveMessage(data => {
-            console.log("[DetailsViewProvider] Message received:", data.command);
             switch (data.command) {
                 case 'triggerOpenFile':
                     if (data.filePath && typeof data.lineNumber === 'number') {
@@ -66,7 +64,6 @@ export class DetailsWebviewViewProvider implements vscode.Disposable {
         }, null, this._disposables);
 
         this._panel.onDidDispose(() => {
-            console.log('[DetailsViewProvider] Panel disposed');
             // Important : Nettoyer les listeners associés à CE panel
              this._disposables.forEach(d => d.dispose());
              this._disposables = []; // Vider le tableau pour la prochaine création
@@ -85,7 +82,6 @@ export class DetailsWebviewViewProvider implements vscode.Disposable {
         this.showPanel();
 
         if (this._panel) {
-            console.log(`[DetailsViewProvider] Updating panel content for ID: ${response?.vulnerability?.id || 'none'}`);
             // Assign the new HTML to the existing webview
             this._panel.webview.html = this._getHtmlForWebview(this._panel.webview);
              // Optionnel : donner le focus au panel mis à jour
@@ -144,7 +140,6 @@ export class DetailsWebviewViewProvider implements vscode.Disposable {
       * Cleans up resources when the provider instance is disposed (e.g., during extension deactivation).
       */
      public dispose() {
-         console.log("[DetailsWebviewViewProvider] Disposing provider instance.");
          // Dispose the panel if it exists (which will trigger its onDidDispose and clean listeners)
          if (this._panel) {
              this._panel.dispose();

@@ -62,11 +62,8 @@ export class ScanStateManager {
         const stateChanged = this._isLoading !== loading || (loading && this._error !== null);
         this._isLoading = loading;
         if (loading) {
-            this._error = null; // Clear error when starting to load
-            // Optionnel: Clear previous results immediately on loading start?
-            // this.clearDataInternal();
+            this._error = null;
         }
-        console.log(`[ScanStateManager] Loading set to: ${loading}`);
         if (stateChanged) {
             this._onDidChangeState.fire();
         }
@@ -79,8 +76,7 @@ export class ScanStateManager {
      * @param error - An error object if the scan failed.
      */
     public updateState(results: GetProjectVulnerabilitiesResponseDto | null, error?: Error | null): void {
-        console.log('[ScanStateManager] Updating state...');
-        this._isLoading = false; // Update always stops loading
+        this._isLoading = false;
 
         if (error) {
             const errorMessage = error.message || 'An unknown error occurred during the scan.';
@@ -88,12 +84,9 @@ export class ScanStateManager {
             this._error = errorMessage;
             this.clearDataInternal(); // Clear data on error
         } else if (results) {
-            console.log(`[ScanStateManager] Updating state with ${results.total ?? 0} vulnerabilities.`);
             this._error = null;
             this._lastScanResponse = results;
         } else {
-            // Case: Scan finished successfully but returned null/empty results
-            console.log("[ScanStateManager] Updating state with no results and no error.");
             this._error = null;
             this.clearDataInternal();
         }
@@ -102,7 +95,6 @@ export class ScanStateManager {
 
     /** Resets the state, e.g., when opening a new workspace or clearing results */
     public resetState(): void {
-        console.log("[ScanStateManager] Resetting state.");
         const changed = this._isLoading || this._error !== null || this._lastScanResponse !== null;
         this._isLoading = false;
         this._error = null;

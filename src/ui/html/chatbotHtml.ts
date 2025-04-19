@@ -31,7 +31,7 @@ export interface ProviderState {
 export interface VulnerabilityInfoForWebview {
     id: string;
     name: string; // Already HTML-escaped
-    type: 'sast' | 'iac';
+    type: 'sast' | 'iac' | 'sca';
     fullPath: string; // Already HTML-escaped
     shortPath: string; // Already HTML-escaped
 }
@@ -109,7 +109,7 @@ export function getChatbotHtml(
         // 3. Prepare Initial State JSON for JS injection
         //    (Same logic as before to prepare the state object)
         const initialVulnListForJs: VulnerabilityInfoForWebview[] = (state.vulnerabilities || [])
-            .filter(v => v?.vulnerability?.vulnerabilityType === 'sast' || v?.vulnerability?.vulnerabilityType === 'iac')
+            .filter(v => v?.vulnerability?.vulnerabilityType === 'sast' || v?.vulnerability?.vulnerabilityType === 'iac' || v?.vulnerability?.vulnerabilityType === 'sca')
             .map(vuln => {
                 let fullPath = '';
                 if (vuln && typeof vuln === 'object' && 'path' in vuln && vuln.path) {
@@ -121,7 +121,7 @@ export function getChatbotHtml(
                 return {
                     id: vuln.id,
                     name: escapeHtmlForExtension(vuln.vulnerability?.name || vuln.id), // Escape here
-                    type: vuln.vulnerability.vulnerabilityType as 'sast' | 'iac',
+                    type: vuln.vulnerability.vulnerabilityType as 'sast' | 'iac' | 'sca',
                     fullPath: escapeHtmlForExtension(fullPath), // Escape here
                     shortPath: escapeHtmlForExtension(shortPath) // Escape here
                 };

@@ -22,7 +22,7 @@ const MAX_POLLING_ATTEMPTS = 60; // 5 minutes timeout (60 * 5s)
 
 // --- Development Switch ---
 // Set to true to use mock data for UI testing, false to use the real API.
-const USE_MOCK_DATA = true;
+const USE_MOCK_DATA = false;
 // --- ------------------ ---
 
 /**
@@ -59,7 +59,6 @@ export async function startScanCommand(
 
     // 2. Ensure API Key is configured (prompts user if needed)
     if (!await authService.ensureApiKeyIsSet()) {
-        console.log('[ScanCommand] API Key setup cancelled or failed.');
         return; // Exit if user cancelled key input
     }
 
@@ -74,7 +73,6 @@ export async function startScanCommand(
     // --- MOCK DATA HANDLING SECTION ---
     // --- ============================ ---
     if (USE_MOCK_DATA) {
-        console.log("[ScanCommand] --- Using Mock Data (USE_MOCK_DATA is true) ---");
         summaryProvider.setLoading(true, "Loading mock data...");
         sastProvider.updateFindings([]); iacProvider.updateFindings([]); scaProvider.updateFindings([]); // Clear previous findings
         await vscode.window.withProgress(
@@ -99,7 +97,6 @@ export async function startScanCommand(
                     );
                     vscode.window.showInformationMessage(`Mock Scan Complete: Displaying ${mockResponse.vulnerabilities.length} mock vulnerabilities.`);
                 } catch (mockError: any) {
-                     console.error("Error loading/processing mock data:", mockError);
                      summaryProvider.updateError(`Failed to load mock data: ${mockError.message}`);
                 }
             }
@@ -112,7 +109,6 @@ export async function startScanCommand(
 
 
     // --- REAL API LOGIC ---
-    console.log("[ScanCommand] --- Using Real API (USE_MOCK_DATA is false) ---");
     summaryProvider.setLoading(true, "Starting scan...");
     sastProvider.updateFindings([]); iacProvider.updateFindings([]); scaProvider.updateFindings([]);
 
@@ -141,7 +137,6 @@ export async function startScanCommand(
                 // --- TODO: Critical adaptation needed here ---
                  scanId = startResponse.message; // Or startResponse.scanId ? Verify your DTO and API!
                  if (!scanId) { throw new Error('API did not return a valid scan ID.'); }
-                 console.log(`[ScanCommand] Scan initiated with ID: ${scanId}`);
                  if (token.isCancellationRequested) { throw new Error('Cancelled by user.'); }
 
                 // Step C: Poll for scan completion
@@ -149,7 +144,7 @@ export async function startScanCommand(
                 summaryProvider.setLoading(true, `Scan ${scanId} running... Waiting...`);
                 const finalScanStatus = await pollScanStatus(projectId, scanId, apiService, progress, token);
                 if (token.isCancellationRequested) { throw new Error('Cancelled by user.'); }
-                if (finalScanStatus !== 'COMPLETED') { throw new Error(`Scan finished with status: ${finalScanStatus}.`); }
+                if (finalScanStatus !== 'COMPLETED' && finalScanStatus !== 'COMPLETED_DEGRADED') { throw new Error(`Scan finished with status: ${finalScanStatus}.`); }
 
                 // Step D: Fetch results (run in parallel for efficiency)
                 progress.report({ increment: 80, message: 'Fetching results...' });
@@ -232,7 +227,6 @@ async function pollScanStatus(
     let attempts = 0;
     const maxAttempts = MAX_POLLING_ATTEMPTS;
     const interval = POLLING_INTERVAL_MS;
-    console.log(`[ScanCommand] Starting polling for scan ${scanId} (Interval: ${interval}ms, Max Attempts: ${maxAttempts})`);
 
     while (attempts < maxAttempts) {
         if (token.isCancellationRequested) { throw new Error('Cancelled by user.'); }
@@ -240,7 +234,6 @@ async function pollScanStatus(
         try {
             const statusResponse = await apiService.getScanStatus(projectId, scanId);
             const currentStatus = statusResponse.state?.toUpperCase() || 'UNKNOWN';
-            console.log(`[ScanCommand] Poll attempt ${attempts}: Status = ${currentStatus}`);
 
             // Calculate progress increment (distribute remaining progress over polling attempts)
             // Example: If polling starts at 30% and ends at 80%, distribute 50% over maxAttempts.
@@ -250,12 +243,10 @@ async function pollScanStatus(
                 message: `Status: ${currentStatus} (Attempt ${attempts}/${maxAttempts})`
             });
 
-            if (currentStatus === 'COMPLETED' || currentStatus === 'FAILED') {
-                console.log(`[ScanCommand] Polling finished for scan ${scanId} with status: ${currentStatus}`);
+            if (currentStatus === 'COMPLETED' || currentStatus === 'FAILED' || currentStatus === 'COMPLETED_DEGRADED') {
                 return currentStatus;
             }
         } catch (pollError: any) {
-            console.error(`[ScanCommand] Polling attempt ${attempts} failed:`, pollError.message);
             // Stop polling immediately on critical errors
             if (axios.isAxiosError(pollError) && pollError.response?.status && [401, 403, 404].includes(pollError.response.status)) {
                 throw new Error(`Polling failed: API returned status ${pollError.response.status}. Aborting.`);
@@ -280,20 +271,16 @@ async function createWorkspaceZip(workspacePath: string, token: vscode.Cancellat
      const tempDir = os.tmpdir();
      const zipFileName = `cybedefend-scan-${Date.now()}.zip`;
      const zipFilePath = path.join(tempDir, zipFileName);
-     console.log(`[ZipUtil] Creating archive at: ${zipFilePath}`);
 
      const output = fs.createWriteStream(zipFilePath);
      const archive = archiver('zip', { zlib: { level: 9 } }); // Use compression
 
      const archivePromise = new Promise<void>((resolve, reject) => {
          let cancellationListener = token?.onCancellationRequested(() => {
-             console.log('[ZipUtil] Cancellation requested.');
              archive.abort();
              // Ensure stream is closed before unlinking, handle potential errors
              output.close((err) => {
-                 if (err) console.error("Error closing output stream on cancel:", err);
                  fs.unlink(zipFilePath, (unlinkErr) => {
-                     if (unlinkErr) console.error("Error removing partial zip on cancel:", unlinkErr);
                      reject(new Error('Cancelled by user.'));
                  });
              });
@@ -308,7 +295,6 @@ async function createWorkspaceZip(workspacePath: string, token: vscode.Cancellat
      archive.pipe(output);
 
      // Use glob for efficient file finding and exclusion
-     console.log(`[ZipUtil] Globbing files in: ${workspacePath}`);
      const files = await glob('**/*', {
          cwd: workspacePath,
          dot: false,         // Exclude dotfiles/folders like .git, .vscode
@@ -317,7 +303,6 @@ async function createWorkspaceZip(workspacePath: string, token: vscode.Cancellat
          absolute: false     // Relative paths needed for archive structure
      });
       if (token.isCancellationRequested) throw new Error('Cancelled by user.');
-     console.log(`[ZipUtil] Found ${files.length} files to archive.`);
 
      // Add files to archive
      for (const file of files) {
@@ -326,10 +311,8 @@ async function createWorkspaceZip(workspacePath: string, token: vscode.Cancellat
          archive.file(sourcePath, { name: file }); // name: use relative path inside archive
      }
 
-     console.log('[ZipUtil] Finalizing archive...');
      await archive.finalize(); // Wait for archive data to be written
      await archivePromise;     // Wait for stream 'close' or 'error'
-     console.log(`[ZipUtil] Archive finalized: ${zipFilePath}`);
      return zipFilePath;
 }
 
@@ -340,7 +323,6 @@ async function createWorkspaceZip(workspacePath: string, token: vscode.Cancellat
 async function cleanupZipFile(zipFilePath: string): Promise<void> {
      try {
          await fs.promises.unlink(zipFilePath);
-         console.log('[ZipUtil] Temporary zip file deleted:', zipFilePath);
      } catch (cleanupError) {
          console.error('[ZipUtil] Failed to delete temporary zip file:', cleanupError);
      }
@@ -355,7 +337,6 @@ function handleCommandError(error: any, summaryProvider: SummaryViewProvider): v
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
     // Avoid showing 'Cancelled' as an error notification
     if (!errorMessage.toLowerCase().includes('cancel')) {
-        console.error('[Command Error]', error); // Log full error for debugging
         vscode.window.showErrorMessage(`Operation Failed: ${errorMessage}`);
         summaryProvider.updateError(errorMessage); // Update summary view with error state
     } else {
@@ -399,6 +380,4 @@ function distributeFindingsToProviders(
     sastProvider.updateFindings(sastVulns);
     iacProvider.updateFindings(iacVulns);
     scaProvider.updateFindings(scaVulns);
-
-    console.log(`[Distribute] Findings distributed: SAST(${sastVulns.length}), IAC(${iacVulns.length}), SCA(${scaVulns.length})`);
 }

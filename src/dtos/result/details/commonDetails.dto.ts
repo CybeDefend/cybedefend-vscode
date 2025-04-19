@@ -60,10 +60,9 @@ export interface VulnerabilityMetadataDto {
     description: string;
     howToPrevent: string;
     owaspTop10?: string[] | null;
-    severity: string; // Tu devrais peut-être utiliser un Enum ici aussi
+    severity: string;
     language: string;
-    vulnerabilityType: 'sast' | 'iac' | 'sca'; // Type discriminant !
-    // references: ReferencesDto[]; // Si tu as besoin des références
+    vulnerabilityType: 'sast' | 'iac' | 'sca';
 }
 
 // Enum possible pour la sévérité (basé sur les commentaires)
