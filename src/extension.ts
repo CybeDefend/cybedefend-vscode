@@ -9,24 +9,25 @@ import { SastViewProvider } from './providers/sastViewProvider';
 import { IacViewProvider } from './providers/iacViewProvider';
 import { ScaViewProvider } from './providers/scaViewProvider';
 import { ChatbotViewProvider } from './providers/chatbotViewProvider';
-// Assurez-vous que le chemin vers scanCommands est correct et qu'il exporte startScanCommand
-import { startScanCommand } from './commands/scanCommands'; // Assurez-vous que ce fichier existe et exporte la fonction
+import { startScanCommand } from './commands/scanCommands';
 import { openSettingsCommand, updateApiKeyCommand } from './commands/settingsCommands';
-// Assurez-vous que le chemin vers detailsCommands est correct et qu'il exporte les fonctions
-import { showVulnerabilityDetailsCommand, openFileLocationCommand } from './commands/detailsCommands'; // Assurez-vous que ce fichier existe
+import { showVulnerabilityDetailsCommand, openFileLocationCommand } from './commands/detailsCommands';
 import {
     COMMAND_START_SCAN, COMMAND_OPEN_SETTINGS, COMMAND_SHOW_DETAILS,
-    COMMAND_UPDATE_API_KEY, COMMAND_OPEN_FILE_LOCATION, COMMAND_UPDATE_PROJECT_ID // Import de la nouvelle commande
+    COMMAND_UPDATE_API_KEY, COMMAND_OPEN_FILE_LOCATION, COMMAND_UPDATE_PROJECT_ID
 } from './constants/constants';
-import { DetailedVulnerability } from './dtos/result/details'; // Assurez-vous que ce DTO existe
+import { DetailedVulnerability } from './dtos/result/details';
 
 let currentProjectConfig: ProjectConfig | null = null;
 
 export async function activate(context: vscode.ExtensionContext) {
     console.log('[CybeDefendScanner] Activating extension...');
 
+    // --- Instanciation des Services ---
     const authService = new AuthService(context);
-    const apiService = new ApiService(authService); // ApiService utilisera authService pour obtenir la clé API si nécessaire
+    const apiService = new ApiService(authService);
+
+    // --- Instanciation des Providers ---
     const settingsProvider = new SettingsWebviewProvider(context, authService);
     const detailsViewProvider = new DetailsWebviewViewProvider(context);
     const summaryProvider = new SummaryViewProvider(context);
@@ -35,36 +36,32 @@ export async function activate(context: vscode.ExtensionContext) {
     const scaProvider = new ScaViewProvider(context);
     const chatbotProvider = new ChatbotViewProvider(context, apiService);
 
+    // --- Enregistrement des Disposables ---
     context.subscriptions.push(
-        settingsProvider,
-        detailsViewProvider,
-        summaryProvider,
-        sastProvider,
-        iacProvider,
-        scaProvider,
-        chatbotProvider
+        settingsProvider, detailsViewProvider, summaryProvider,
+        sastProvider, iacProvider, scaProvider, chatbotProvider
     );
 
-    // Vérification initiale de la configuration (API Key + Project ID)
-    currentProjectConfig = await authService.ensureProjectConfigurationIsSet();
+    // --- Vérification initiale de la configuration ---
+    currentProjectConfig = await authService.ensureProjectConfigurationIsSet(apiService);
     if (!currentProjectConfig) {
-        console.warn("[CybeDefendScanner] Initial project configuration failed or was cancelled.");
+        console.warn("[CybeDefendScanner] Initial project configuration failed or cancelled.");
+        summaryProvider.updateConfiguration(null);
     } else {
-         console.log(`[CybeDefendScanner] Configuration loaded for workspace: ${currentProjectConfig.workspaceRoot}`);
+         console.log(`[CybeDefendScanner] Config loaded: Org=${currentProjectConfig.organizationId}, Proj=${currentProjectConfig.projectId}`);
+         summaryProvider.updateConfiguration(currentProjectConfig);
     }
 
-    // Listener pour les changements de workspace
-    context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(async (event) => {
+    // --- Listener Changements Workspace ---
+    context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(async () => {
         console.log("[CybeDefendScanner] Workspace folders changed, re-validating configuration...");
-        currentProjectConfig = await authService.ensureProjectConfigurationIsSet();
-        if (!currentProjectConfig) {
-             console.warn("[CybeDefendScanner] Configuration check failed after workspace change.");
-        } else {
-             console.log(`[CybeDefendScanner] Configuration re-validated for workspace: ${currentProjectConfig.workspaceRoot}`);
-        }
+        currentProjectConfig = await authService.ensureProjectConfigurationIsSet(apiService); // Revalider
+        summaryProvider.updateConfiguration(currentProjectConfig);
+        sastProvider.refresh(); iacProvider.refresh(); scaProvider.refresh();
+        chatbotProvider.resetConversationState();
     }));
 
-    // Enregistrement des Webview View Providers
+    // --- Enregistrement Webview Providers ---
     const viewProvidersToRegister = [
         { id: SummaryViewProvider.viewType, provider: summaryProvider },
         { id: SastViewProvider.viewType,    provider: sastProvider },
@@ -73,58 +70,56 @@ export async function activate(context: vscode.ExtensionContext) {
         { id: ChatbotViewProvider.viewType, provider: chatbotProvider }
     ];
     viewProvidersToRegister.forEach(({ id, provider }) => {
-        context.subscriptions.push(
-            vscode.window.registerWebviewViewProvider(id, provider as vscode.WebviewViewProvider)
-        );
+        context.subscriptions.push(vscode.window.registerWebviewViewProvider(id, provider as vscode.WebviewViewProvider));
     });
 
-    // Enregistrement des Commandes
+    // --- Enregistrement des Commandes ---
     context.subscriptions.push(
         vscode.commands.registerCommand(COMMAND_START_SCAN, async () => {
             if (!currentProjectConfig) {
-                console.log("[CybeDefendScanner] Configuration missing, attempting to reconfigure before scan...");
-                currentProjectConfig = await authService.ensureProjectConfigurationIsSet();
+                console.log("[CybeDefendScanner] Config missing, attempting re-configuration...");
+                currentProjectConfig = await authService.ensureProjectConfigurationIsSet(apiService);
+                summaryProvider.updateConfiguration(currentProjectConfig);
             }
 
             if (currentProjectConfig) {
-                 // Assurez-vous que startScanCommand accepte ces paramètres
                  startScanCommand(
                      context,
-                     authService, // Peut-être pas nécessaire si ApiService gère l'auth
                      apiService,
-                     summaryProvider, sastProvider, iacProvider, scaProvider
+                     summaryProvider, sastProvider, iacProvider, scaProvider,
+                     currentProjectConfig.projectId,
+                     currentProjectConfig.workspaceRoot
                  );
              } else {
-                 vscode.window.showErrorMessage('CybeDefend: Configuration incomplete. Cannot start scan. Check API Key and Project ID.');
-                 console.error("[CybeDefendScanner] Scan aborted due to missing configuration.");
+                 vscode.window.showErrorMessage('CybeDefend: Configuration incomplète. Scan annulé.');
+                 console.error("[CybeDefendScanner] Scan aborted: missing configuration.");
              }
          }),
         vscode.commands.registerCommand(COMMAND_OPEN_SETTINGS, () => {
-             openSettingsCommand(settingsProvider);
+             settingsProvider.show();
          }),
         vscode.commands.registerCommand(COMMAND_UPDATE_API_KEY, async () => {
              await updateApiKeyCommand(authService);
-             // Revalider potentiellement la config après modif API Key
-             currentProjectConfig = await authService.ensureProjectConfigurationIsSet();
-         }),
-        vscode.commands.registerCommand(COMMAND_UPDATE_PROJECT_ID, async () => { // Nouvelle commande
+             currentProjectConfig = await authService.ensureProjectConfigurationIsSet(apiService);
+             summaryProvider.updateConfiguration(currentProjectConfig);
+        }),
+        vscode.commands.registerCommand(COMMAND_UPDATE_PROJECT_ID, async () => {
              await authService.updateWorkspaceProjectId();
-             // Revalider la config après modif Project ID
-             currentProjectConfig = await authService.ensureProjectConfigurationIsSet();
+             currentProjectConfig = await authService.ensureProjectConfigurationIsSet(apiService);
+             summaryProvider.updateConfiguration(currentProjectConfig);
          }),
         vscode.commands.registerCommand(COMMAND_SHOW_DETAILS,
              (vulnerabilityData: DetailedVulnerability, inferredType: ScanType | undefined) => {
                  if(currentProjectConfig) {
-                     // Assurez-vous que showVulnerabilityDetailsCommand accepte ces paramètres si besoin
                      showVulnerabilityDetailsCommand(
                          vulnerabilityData,
                          inferredType,
                          apiService,
-                         detailsViewProvider
-                         // currentProjectConfig.projectId // Ajoutez si nécessaire
+                         detailsViewProvider,
+                         currentProjectConfig.projectId
                      );
                  } else {
-                    vscode.window.showWarningMessage('CybeDefend: Cannot show details, configuration missing.');
+                    vscode.window.showWarningMessage('CybeDefend: Config manquante pour afficher les détails.');
                  }
              }
         ),
@@ -135,7 +130,6 @@ export async function activate(context: vscode.ExtensionContext) {
         )
     );
 
-    // Commandes de FOCUS
     context.subscriptions.push(
         vscode.commands.registerCommand('cybedefendScanner.focusScannerView', () => {
             vscode.commands.executeCommand(`${SummaryViewProvider.viewType}.focus`);
@@ -147,7 +141,7 @@ export async function activate(context: vscode.ExtensionContext) {
         })
     );
 
-    console.log('[CybeDefendScanner] Extension activated successfully.');
+    console.log('[CybeDefendScanner] Extension CybeDefend activée.');
 }
 
 export function deactivate() {

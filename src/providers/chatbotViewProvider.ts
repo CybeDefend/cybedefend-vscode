@@ -359,7 +359,7 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
     }
 
     /** Réinitialise l'état de la conversation */
-    private resetConversationState() {
+    public resetConversationState() {
         this.disposeSSEConnection(); // Ferme SSE et finalise
         // Reset état conversationnel
         this._state.messages = []; this._state.conversationId = null; this._state.error = null;

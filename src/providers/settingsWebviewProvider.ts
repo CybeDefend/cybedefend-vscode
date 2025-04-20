@@ -93,7 +93,7 @@ export class SettingsWebviewProvider implements vscode.Disposable {
         if (workspaceRoot) {
             // Utilisation de la méthode hypothétique ajoutée à AuthService
             // Remplacez par votre méthode réelle si différente
-            currentProjectId = await this.authService.getWorkspaceProjectId(workspaceRoot);
+            currentProjectId = await this.authService.getCurrentWorkspaceProjectId();
         }
         const workspaceName = vscode.workspace.name; // Nom du workspace
 

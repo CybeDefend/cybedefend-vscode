@@ -95,6 +95,13 @@ export class ScaViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
     }
 
     /**
+     * Rafraîchit la vue.
+     */
+    public refresh(): void {
+        this._updateViewHtml();
+    }
+
+    /**
      * Nettoie les ressources.
      */
     public dispose(): void {

@@ -110,6 +110,13 @@ export class IacViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
     }
 
     /**
+     * Rafraîchit la vue.
+     */
+    public refresh(): void {
+        this._updateViewHtml();
+    }
+
+    /**
      * Nettoie les ressources lorsque le provider est détruit.
      */
     public dispose(): void {

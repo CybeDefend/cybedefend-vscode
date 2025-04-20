@@ -98,6 +98,13 @@ export class SastViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     }
 
     /**
+     * Rafraîchit la vue.
+     */
+    public refresh(): void {
+        this._updateView();
+    }
+
+    /**
      * Nettoie les ressources.
      */
     public dispose() {

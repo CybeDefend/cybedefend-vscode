@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 // MODIFIÉ: Importer depuis le nouveau chemin via l'index
 import { getSummaryViewHtml } from '../ui/html';
 import { ScanProjectInfoDto, CountVulnerabilitiesCountByType } from '../dtos/result/response/get-project-vulnerabilities-response.dto';
+import { ProjectConfig } from '../auth/authService';
 
 // Type SummaryData (gardé ici pour la clarté du provider, pourrait aussi être dans un fichier types)
 type SummaryData = {
@@ -11,9 +12,14 @@ type SummaryData = {
     scanInfo?: ScanProjectInfoDto;
     error?: string | null;
     isLoading?: boolean;
-    isReady?: boolean; // State before first scan
-    noWorkspace?: boolean; // State when no folder is open
-    statusMessage?: string; // Optional message during loading/processing
+    isReady?: boolean;          // Prêt à scanner (config OK, pas de scan en cours)
+    isConfiguring?: boolean;    // En cours de configuration (alternative à isLoading?)
+    isConfigMissing?: boolean;  // Configuration échouée / incomplète
+    noWorkspace?: boolean;      // Aucun dossier ouvert
+    statusMessage?: string;     // Message pendant chargement/configuration
+    // Données de configuration (optionnel, pour affichage ?)
+    projectName?: string;
+    organizationName?: string; // A récupérer via un appel API si besoin d'afficher
 };
 
 /**
@@ -21,22 +27,39 @@ type SummaryData = {
  * Implements vscode.WebviewViewProvider and vscode.Disposable.
  */
 export class SummaryViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
-    /** Static identifier for this view type, must match the one in package.json */
     public static readonly viewType = 'cybedefendScanner.summaryView';
 
     private _view?: vscode.WebviewView;
     private readonly _extensionUri: vscode.Uri;
-    private _currentSummary: SummaryData = { isReady: true };
+    // Initialiser avec un état de base
+    private _currentSummary: SummaryData = { noWorkspace: !vscode.workspace.workspaceFolders?.length };
     private _disposables: vscode.Disposable[] = [];
+    private _currentConfig: ProjectConfig | null = null; // Stocker la config actuelle
 
     constructor(private readonly context: vscode.ExtensionContext) {
         this._extensionUri = context.extensionUri;
-        this.updateState({ noWorkspace: !vscode.workspace.workspaceFolders?.length, isReady: !!vscode.workspace.workspaceFolders?.length });
+        // Mettre à jour l'état initial basé sur le workspace
+        this.updateStateBasedOnWorkspace();
         const workspaceWatcher = vscode.workspace.onDidChangeWorkspaceFolders(() => {
-            this.updateState({ noWorkspace: !vscode.workspace.workspaceFolders?.length, isReady: !!vscode.workspace.workspaceFolders?.length });
+            this.updateStateBasedOnWorkspace();
+            // Si le workspace change, la config est invalidée jusqu'à revalidation par extension.ts
+            this.updateConfiguration(null);
         });
         context.subscriptions.push(workspaceWatcher);
     }
+
+    // Met à jour l'état initial si aucun workspace n'est ouvert
+    private updateStateBasedOnWorkspace() {
+        const hasWorkspace = !!vscode.workspace.workspaceFolders?.length;
+        if (!hasWorkspace) {
+             this.updateState({ noWorkspace: true });
+        } else if (this._currentSummary.noWorkspace) {
+            // Si un workspace vient d'être ouvert, passer en mode 'configuration manquante'
+            // jusqu'à ce que extension.ts nous donne la config
+            this.updateState({ noWorkspace: false, isConfigMissing: true });
+        }
+     }
+
 
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
@@ -79,6 +102,30 @@ export class SummaryViewProvider implements vscode.WebviewViewProvider, vscode.D
         this._disposables.push(messageSubscription, disposeSubscription);
     }
 
+    /**
+     * Met à jour la vue avec la configuration projet obtenue.
+     * (Point 4 demandé)
+     * @param config La configuration projet (ou null si échoué/non disponible)
+     */
+    public updateConfiguration(config: ProjectConfig | null): void {
+        this._currentConfig = config;
+        if (config) {
+            // Config OK: passer en état prêt ou garder l'état actuel si un scan était déjà affiché
+            if (!this._currentSummary.scanInfo && !this._currentSummary.isLoading) {
+                this.updateState({ isReady: true, isConfigMissing: false, noWorkspace: false });
+            } else {
+                 // Garder l'état actuel (chargement ou affichage résultat) mais s'assurer que configMissing est faux
+                 this.updateState({ isConfigMissing: false, noWorkspace: false });
+            }
+        } else {
+            // Config échouée ou absente (et workspace ouvert)
+            if (!this._currentSummary.noWorkspace) {
+                 this.updateState({ isConfigMissing: true, isReady: false, isLoading: false });
+            }
+            // Si noWorkspace est true, il a priorité
+        }
+    }
+
     public setLoading(isLoading: boolean, message: string = "Scanning...") {
         if (isLoading) {
             this._currentSummary = { isLoading: true, statusMessage: message };
@@ -107,21 +154,33 @@ export class SummaryViewProvider implements vscode.WebviewViewProvider, vscode.D
         this._updateViewHtml();
     }
 
-   public updateState(state: { isReady?: boolean, noWorkspace?: boolean }) {
-        // Reset other fields only if setting a general state like noWorkspace or initial isReady
-        if (state.noWorkspace !== undefined || state.isReady !== undefined) {
-             this._currentSummary = {
-                isLoading: false, error: null, scanInfo: undefined, counts: undefined, total: undefined,
-                 isReady: state.isReady ?? false,
-                 noWorkspace: state.noWorkspace ?? false
-             };
-        } else {
-             // Avoid resetting data if just updating parts of the state (though this func mainly handles general states)
-             this._currentSummary = { ...this._currentSummary, ...state };
-         }
+   // Méthode interne générique pour mettre à jour l'état et la vue
+   public updateState(newState: Partial<SummaryData>) {
+    // Fusionner l'état partiel avec l'état actuel
+    this._currentSummary = { ...this._currentSummary, ...newState };
+    // Assurer une cohérence (ex: on ne peut pas être 'ready' et 'loading' en même temps)
+    if (this._currentSummary.isLoading) {
+        this._currentSummary.isReady = false;
+        this._currentSummary.isConfigMissing = false;
+        this._currentSummary.noWorkspace = false;
+        this._currentSummary.error = null;
+    } else if (this._currentSummary.error) {
+         this._currentSummary.isReady = false;
+         this._currentSummary.isLoading = false;
+         this._currentSummary.scanInfo = undefined; // Effacer les résultats en cas d'erreur
+    } else if (this._currentSummary.isReady) {
+         this._currentSummary.isLoading = false;
+         this._currentSummary.isConfigMissing = false;
+         this._currentSummary.noWorkspace = false;
+         this._currentSummary.error = null;
+         // Optionnel: effacer les anciens résultats quand on redevient prêt ?
+         // this._currentSummary.scanInfo = undefined;
+         // this._currentSummary.counts = undefined;
+         // this._currentSummary.total = undefined;
+    } // Ajouter d'autres règles de cohérence si nécessaire
 
-        this._updateViewHtml();
-   }
+    this._updateViewHtml();
+}
 
     private _updateViewHtml(): void {
         if (this._view) {

@@ -3,7 +3,6 @@ import * as vscode from 'vscode';
 import { ApiService, ScanType } from '../api/apiService';
 import { DetailsWebviewViewProvider } from '../providers/detailsWebviewProvider';
 import { DetailedVulnerability } from '../dtos/result/details';
-import { getProjectId } from '../utilities/config';
 import path from 'path';
 import { createMockDetailsResponse } from '../test/mocks/mockVulnerabilities';
 
@@ -17,7 +16,8 @@ export async function showVulnerabilityDetailsCommand(
     vulnerabilityDataFromList: DetailedVulnerability,
     inferredType: ScanType | undefined,
     apiService: ApiService,
-    detailsViewProvider: DetailsWebviewViewProvider
+    detailsViewProvider: DetailsWebviewViewProvider,
+    projectId: string
 ) {
     if (!vulnerabilityDataFromList) { 
         vscode.window.showErrorMessage('No vulnerability data provided');
@@ -25,56 +25,49 @@ export async function showVulnerabilityDetailsCommand(
     }
     
     
-    if (USE_MOCK_DATA_DETAILS) { /* ... logique mock ... */
+    if (USE_MOCK_DATA_DETAILS) {
         try {
-            const projectId = getProjectId() || 'mock-project-id';
             const mockDetailedResponse = createMockDetailsResponse(vulnerabilityDataFromList);
             detailsViewProvider.updateContent(mockDetailedResponse);
         } catch (mockError: any) {
             vscode.window.showErrorMessage(`Failed to show mock details: ${mockError.message}`);
             detailsViewProvider.updateContent(undefined);
         }
-    } else {
-        const projectId = getProjectId();
-        if (!projectId) { 
-            vscode.window.showErrorMessage('Project ID not configured'); 
-            detailsViewProvider.updateContent(undefined); 
-            return; 
-        }
-        
-        const vulnerabilityId = vulnerabilityDataFromList.id;
-        if (!vulnerabilityId) { 
-            vscode.window.showErrorMessage('Invalid vulnerability ID'); 
-            detailsViewProvider.updateContent(undefined); 
-            return; 
-        }
-        
-        let scanType: ScanType | undefined = inferredType;
-        if (!scanType) {
-            const metaType = (vulnerabilityDataFromList as any).vulnerability?.vulnerabilityType;
-            if (metaType === 'sast' || 'dataFlowItems' in vulnerabilityDataFromList) scanType = 'sast';
-            else if (metaType === 'iac') scanType = 'iac';
-            else if (metaType === 'sca' || 'scaDetectedPackage' in vulnerabilityDataFromList) scanType = 'sca';
-        }
-        
-        if (!scanType) { 
-            vscode.window.showErrorMessage(`Could not determine vulnerability type`); 
-            detailsViewProvider.updateContent(undefined); 
-            return; 
-        }
-        
-        try {
-            await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Window, title: `Loading details...`}, 
-                async () => {
-                    const detailedResponse = await apiService.getVulnerabilityDetails(projectId, vulnerabilityId, scanType);
-                    detailsViewProvider.updateContent(detailedResponse);
-                }
-            );
-        } catch (error: any) {
-            vscode.window.showErrorMessage(`Could not load vulnerability details: ${error.message}`);
-            detailsViewProvider.updateContent(undefined);
-        }
+    }
+
+      
+    const vulnerabilityId = vulnerabilityDataFromList.id;
+    if (!vulnerabilityId) { 
+        vscode.window.showErrorMessage('Invalid vulnerability ID'); 
+        detailsViewProvider.updateContent(undefined); 
+        return; 
+    }
+    
+    let scanType: ScanType | undefined = inferredType;
+    if (!scanType) {
+        const metaType = (vulnerabilityDataFromList as any).vulnerability?.vulnerabilityType;
+        if (metaType === 'sast' || 'dataFlowItems' in vulnerabilityDataFromList) scanType = 'sast';
+        else if (metaType === 'iac') scanType = 'iac';
+        else if (metaType === 'sca' || 'scaDetectedPackage' in vulnerabilityDataFromList) scanType = 'sca';
+    }
+    
+    if (!scanType) { 
+        vscode.window.showErrorMessage(`Could not determine vulnerability type`); 
+        detailsViewProvider.updateContent(undefined); 
+        return; 
+    }
+    
+    try {
+        await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Window, title: `Loading details...`}, 
+            async () => {
+                const detailedResponse = await apiService.getVulnerabilityDetails(projectId, vulnerabilityId, scanType);
+                detailsViewProvider.updateContent(detailedResponse);
+            }
+        );
+    } catch (error: any) {
+        vscode.window.showErrorMessage(`Could not load vulnerability details: ${error.message}`);
+        detailsViewProvider.updateContent(undefined);
     }
 }
 

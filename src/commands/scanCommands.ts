@@ -7,15 +7,13 @@ import archiver from 'archiver';
 import { glob } from 'glob';
 import axios from 'axios';
 import { ApiService, ScanType } from '../api/apiService'; // Assure-toi que ScanType est exporté depuis apiService ou défini globalement
-import { AuthService } from '../auth/authService';
 import { SummaryViewProvider } from '../providers/summaryViewProvider';
 import { SastViewProvider } from '../providers/sastViewProvider';
 import { IacViewProvider } from '../providers/iacViewProvider';
 import { ScaViewProvider } from '../providers/scaViewProvider';
-import { getProjectId } from '../utilities/config';
 import { createMockVulnerabilitiesResponse } from '../test/mocks/mockVulnerabilities'; // Ajuste le chemin si nécessaire
 import { DetailedVulnerability, IacVulnerabilityDetectionDto, SastVulnerabilityDetectionDto, ScaVulnerabilityWithCvssDto } from '../dtos/result/details';
-import { GetProjectVulnerabilitiesResponseDto, CountVulnerabilitiesCountByType, ScanProjectInfoDto } from '../dtos/result/response/get-project-vulnerabilities-response.dto';
+import { CountVulnerabilitiesCountByType, ScanProjectInfoDto } from '../dtos/result/response/get-project-vulnerabilities-response.dto';
 
 const POLLING_INTERVAL_MS = 5000; // 5 seconds polling interval
 const MAX_POLLING_ATTEMPTS = 60; // 5 minutes timeout (60 * 5s)
@@ -41,33 +39,14 @@ const USE_MOCK_DATA = false;
  */
 export async function startScanCommand(
     context: vscode.ExtensionContext,
-    authService: AuthService,
     apiService: ApiService,
     summaryProvider: SummaryViewProvider,
     sastProvider: SastViewProvider,
     iacProvider: IacViewProvider,
-    scaProvider: ScaViewProvider
+    scaProvider: ScaViewProvider,
+    projectId: string,
+    workspaceFolder: string
 ): Promise<void> {
-
-    // 1. Check for an open workspace folder
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    if (!workspaceFolder) {
-        vscode.window.showErrorMessage('Please open a project folder before starting a scan.');
-        return;
-    }
-    const workspacePath = workspaceFolder.uri.fsPath;
-
-    // 2. Ensure API Key is configured (prompts user if needed)
-    if (!await authService.ensureApiKeyIsSet()) {
-        return; // Exit if user cancelled key input
-    }
-
-    // 3. Ensure Project ID is configured
-    const projectId = getProjectId();
-    if (!projectId) {
-        vscode.window.showErrorMessage('Project ID is not configured. Please set "cybedefendScanner.projectId" in your VS Code settings.');
-        return;
-    }
 
     // --- ============================ ---
     // --- MOCK DATA HANDLING SECTION ---
@@ -115,7 +94,7 @@ export async function startScanCommand(
     await vscode.window.withProgress(
         {
             location: vscode.ProgressLocation.Notification,
-            title: `CybeDefend: Scanning '${workspaceFolder.name}'...`,
+            title: `CybeDefend: Scanning...`,
             cancellable: true,
         },
         async (progress, token) => {
@@ -126,7 +105,7 @@ export async function startScanCommand(
                 // Step A: Create project archive (Zip)
                 progress.report({ increment: 10, message: 'Archiving project...' });
                 summaryProvider.setLoading(true, "Archiving project...");
-                zipFilePath = await createWorkspaceZip(workspacePath, token);
+                zipFilePath = await createWorkspaceZip(workspaceFolder, token);
                 // Cancellation check is handled within createWorkspaceZip
 
                 // Step B: Initiate scan via API
