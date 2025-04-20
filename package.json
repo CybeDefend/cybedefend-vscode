@@ -27,7 +27,8 @@
           "cybedefendScanner.projectId": {
             "type": "string",
             "default": "",
-            "description": "The Project ID to use for scans (required for starting scans)"
+            "description": "[DEPRECATED - Use Workspace Setting] The Project ID to use for scans. This setting is for legacy purposes; the extension now prompts and stores the ID per workspace.",
+            "deprecationMessage": "Project ID is now managed per workspace via prompts. Use the 'Update Project ID (Current Workspace)' command instead."
           }
         }
       }
@@ -53,7 +54,12 @@
       },
       {
         "command": "cybedefendScanner.updateApiKey",
-        "title": "Update API Key"
+        "title": "Update API Key (Global)"
+      },
+      {
+         "command": "cybedefendScanner.updateProjectId",
+         "title": "Update Project ID (Current Workspace)",
+         "icon": "$(edit)"
       },
       {
         "command": "cybedefendScanner.openFileLocation",
@@ -109,6 +115,16 @@
       ]
     },
     "menus": {
+       "commandPalette": [
+         {
+            "command": "cybedefendScanner.updateApiKey",
+            "when": "true"
+         },
+         {
+            "command": "cybedefendScanner.updateProjectId",
+            "when": "workspaceFolderCount > 0"
+         }
+      ],
       "view/title": [
         {
           "command": "cybedefendScanner.startScan",
@@ -174,6 +190,7 @@
     "axios": "^1.8.4",
     "eventsource-client": "^1.1.3",
     "form-data": "^4.0.2",
+    "fs": "^0.0.1-security",
     "lodash": "^4.17.21"
   }
 }

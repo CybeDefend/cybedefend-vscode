@@ -1,74 +1,125 @@
-// src/providers/settingsWebviewProvider.ts
+// /Users/julienzammit/Documents/GitHub/extensions/cybedefend-vscode/src/providers/settingsWebviewProvider.ts
 import * as vscode from 'vscode';
-// MODIFIÉ: Importer depuis le nouveau chemin '/ui/html' (via index.ts)
-import { getSettingsWebviewHtml } from '../ui/html';
-import { COMMAND_UPDATE_API_KEY } from '../constants/constants';
+// Assurez-vous que ce chemin est correct si getSettingsWebviewHtml est exporté via un index.ts ou directement
+import { getSettingsWebviewHtml } from '../ui/html/settingsHtml';
+import { COMMAND_UPDATE_API_KEY, COMMAND_UPDATE_PROJECT_ID } from '../constants/constants';
+import { AuthService } from '../auth/authService'; // Importer AuthService
 
 export class SettingsWebviewProvider implements vscode.Disposable {
     private panel: vscode.WebviewPanel | undefined;
     private readonly context: vscode.ExtensionContext;
+    private readonly authService: AuthService; // Ajouter une référence à AuthService
     private disposables: vscode.Disposable[] = [];
 
-    constructor(context: vscode.ExtensionContext) {
+    constructor(context: vscode.ExtensionContext, authService: AuthService) { // Injecter AuthService
         this.context = context;
+        this.authService = authService; // Stocker l'instance injectée
     }
 
-    public show() {
+    public async show() { // Rendre la méthode asynchrone pour récupérer les données
         const column = vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One;
 
         if (this.panel) {
             this.panel.reveal(column);
+            // Mettre à jour le contenu si le panneau existe déjà, au cas où la config aurait changé
+            await this.updateWebviewContent();
             return;
         }
 
         this.panel = vscode.window.createWebviewPanel(
-            'cybedefendScannerSettings',
-            'Scanner Settings',
-            column,
+            'cybedefendScannerSettings', // Identifiant unique du panneau
+            'CybeDefend Settings',       // Titre visible du panneau
+            column,                     // Colonne où afficher le panneau
             {
-                enableScripts: true,
+                enableScripts: true, // Activer JavaScript dans la webview
                 localResourceRoots: [
-                    // Vous n'avez probablement pas besoin de node_modules ici si vous n'utilisez pas d'icônes/libs JS
-                    vscode.Uri.joinPath(this.context.extensionUri, 'media') // Pour d'éventuelles images/CSS spécifiques
+                    vscode.Uri.joinPath(this.context.extensionUri, 'media'), // Pour CSS/Images futures
+                    // Ajoutez d'autres chemins si nécessaire (ex: node_modules pour le toolkit)
+                    // vscode.Uri.joinPath(this.context.extensionUri, 'node_modules')
                 ],
-                retainContextWhenHidden: true
+                retainContextWhenHidden: true // Garder l'état même si le panneau n'est pas visible
             }
         );
 
-        // Utilise la fonction importée depuis ui/html
-        this.panel.webview.html = getSettingsWebviewHtml(this.panel.webview, this.context.extensionUri);
+        // Mettre à jour le contenu initial
+        await this.updateWebviewContent();
 
+        // Gérer les messages reçus de la webview
         this.panel.webview.onDidReceiveMessage(
-            message => {
+            async message => { // Rendre le listener asynchrone si des actions le nécessitent
                 switch (message.command) {
                     case 'triggerUpdateApiKey':
-                        vscode.commands.executeCommand(COMMAND_UPDATE_API_KEY);
+                        // Déclencher la commande VS Code correspondante
+                        await vscode.commands.executeCommand(COMMAND_UPDATE_API_KEY);
+                        // Mettre à jour la vue après l'exécution potentielle de la commande
+                        await this.updateWebviewContent();
+                        return;
+
+                    case 'triggerUpdateProjectId':
+                         // Déclencher la commande VS Code correspondante
+                        await vscode.commands.executeCommand(COMMAND_UPDATE_PROJECT_ID);
+                         // Mettre à jour la vue après l'exécution potentielle de la commande
+                        await this.updateWebviewContent();
                         return;
                 }
             },
-            undefined,
-            this.disposables
+            undefined, // thisArg (non nécessaire ici)
+            this.disposables // Collecter ce listener pour le nettoyage
         );
 
+        // Gérer la fermeture du panneau par l'utilisateur
         this.panel.onDidDispose(() => {
-            this.dispose();
-        }, null, this.disposables);
-        // Ajout à context.subscriptions n'est pas nécessaire ici si l'instance
-        // elle-même est ajoutée dans extension.ts
+            this.dispose(); // Appeler notre propre méthode de nettoyage
+        }, null, this.disposables); // Collecter ce listener
+    }
+
+    /**
+     * Récupère les données actuelles et met à jour le contenu HTML de la webview.
+     * @private
+     */
+    private async updateWebviewContent() {
+        if (!this.panel) {
+            return;
+        }
+
+        // 1. Vérifier si une clé API est définie
+        const apiKey = await this.authService.getApiKey();
+        const isApiKeySet = !!apiKey;
+
+        // 2. Obtenir l'ID de projet et le nom du workspace actuel
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        const workspaceRoot = workspaceFolders && workspaceFolders.length > 0 ? workspaceFolders[0].uri.fsPath : undefined;
+        let currentProjectId: string | undefined = undefined;
+        if (workspaceRoot) {
+            // Utilisation de la méthode hypothétique ajoutée à AuthService
+            // Remplacez par votre méthode réelle si différente
+            currentProjectId = await this.authService.getWorkspaceProjectId(workspaceRoot);
+        }
+        const workspaceName = vscode.workspace.name; // Nom du workspace
+
+        // 3. Générer et définir le HTML
+        this.panel.webview.html = getSettingsWebviewHtml(
+            this.panel.webview,
+            this.context.extensionUri,
+            isApiKeySet,
+            currentProjectId,
+            workspaceName
+        );
     }
 
     public dispose() {
         if (this.panel) {
-            // L'appel à panel.dispose() déclenchera aussi le listener onDidDispose ci-dessus
+            // Dispose gère le nettoyage interne du panneau et déclenche onDidDispose
             this.panel.dispose();
             this.panel = undefined;
         }
-        // Nettoyer les listeners explicitement
+        // Nettoyer tous les listeners que nous avons enregistrés
         while (this.disposables.length) {
-            const x = this.disposables.pop();
-            if (x) {
-                x.dispose();
+            const disposable = this.disposables.pop();
+            if (disposable) {
+                disposable.dispose();
             }
         }
+        console.log('[SettingsWebviewProvider] Disposed.');
     }
 }

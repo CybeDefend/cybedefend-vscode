@@ -21,7 +21,6 @@ export class IacViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
     constructor(private readonly context: vscode.ExtensionContext) {
         this._extensionUri = context.extensionUri;
-        console.log("[IacViewProvider] Initialized.");
     }
 
     /**
@@ -32,7 +31,6 @@ export class IacViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
         resolveContext: vscode.WebviewViewResolveContext<unknown>,
         _token: vscode.CancellationToken
     ): void | Thenable<void> {
-        console.log("[IacViewProvider] Resolving webview view...");
         this._view = webviewView;
 
         webviewView.webview.options = {
@@ -55,7 +53,6 @@ export class IacViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
         // Écouter les messages de la webview
         const messageSubscription = webviewView.webview.onDidReceiveMessage((data: { command: string, vulnerabilityData?: any, scanType?: ScanType }) => {
-            console.log(`[IacViewProvider] Message received: ${data.command}`);
             switch (data.command) {
                 case 'triggerShowDetails':
                     // Vérifier la présence des données nécessaires
@@ -72,7 +69,6 @@ export class IacViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
         // Gérer la destruction de la vue
         const disposeSubscription = webviewView.onDidDispose(() => {
-            console.log('[IacViewProvider] Webview view instance disposed.');
             if (this._view === webviewView) {
                 this._view = undefined; // Réinitialiser la référence
             }
@@ -86,7 +82,6 @@ export class IacViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
         // Stocker les listeners pour pouvoir les nettoyer lors de la destruction du provider
         this._disposables.push(messageSubscription, disposeSubscription);
 
-        console.log("[IacViewProvider] Webview view resolved and listeners attached.");
     }
 
     /**
@@ -94,7 +89,6 @@ export class IacViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
      */
     public updateFindings(findings: IacVulnerabilityDetectionDto[]): void {
         this._findings = findings || []; // Assure que _findings est toujours un tableau
-        console.log(`[IacViewProvider] Updating findings. Count: ${this._findings.length}`);
         this._updateViewHtml(); // Déclenche la mise à jour de l'HTML
     }
 
@@ -103,11 +97,8 @@ export class IacViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
      */
     private _updateViewHtml(): void {
         if (this._view) {
-            console.log("[IacViewProvider] View is visible, updating HTML.");
             this._view.show?.(true); // Assure la visibilité sans voler le focus
             this._view.webview.html = this._getHtmlForWebview(this._view.webview);
-        } else {
-            console.log("[IacViewProvider] View not resolved/visible, update will apply on next resolve.");
         }
     }
 
@@ -115,9 +106,6 @@ export class IacViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
      * Génère le HTML pour la webview en utilisant la fonction importée.
      */
     private _getHtmlForWebview(webview: vscode.Webview): string {
-        // Appelle la fonction depuis ui/html/findingsHtml.ts
-        // Cast `this._findings` vers `DetailedVulnerability[]` car getFindingsViewHtml attend ce type générique.
-        // Cela fonctionne car IacVulnerabilityDetectionDto est une partie de l'union DetailedVulnerability.
         return getFindingsViewHtml(this._findings as DetailedVulnerability[], 'iac', webview, this._extensionUri);
     }
 
@@ -125,13 +113,9 @@ export class IacViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
      * Nettoie les ressources lorsque le provider est détruit.
      */
     public dispose(): void {
-        console.log("[IacViewProvider] Disposing provider.");
-        // Détruire tous les listeners stockés
         while (this._disposables.length) {
             this._disposables.pop()?.dispose();
         }
-        // La vue webview elle-même sera détruite par VS Code,
-        // ce qui déclenchera onDidDispose si elle est active.
         this._view = undefined;
     }
 }
