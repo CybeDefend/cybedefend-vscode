@@ -71,7 +71,7 @@
      * @returns {string} The escaped string.
      */
     function escapeHtml(unsafe) {
-        if (typeof unsafe !== 'string') return '';
+        if (typeof unsafe !== 'string') { return ''; }
         return unsafe
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
@@ -87,22 +87,47 @@
      * @returns {string} Sanitized HTML formatted string.
      */
     function formatMessageContent(rawContent) {
-        if (typeof rawContent !== 'string' || !rawContent) return '';
+        if (typeof rawContent !== 'string' || !rawContent) { return ''; }
         try {
             // Check if Marked and DOMPurify libraries are loaded and available
-            if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') {
-                console.warn("Marked or DOMPurify library not loaded. Falling back to basic HTML formatting.");
-                // Fallback: Escape HTML and convert newlines to <br>
+            if (typeof marked === 'undefined') {
+                console.warn("Marked library not loaded. Falling back to basic HTML formatting.");
+                return escapeHtml(rawContent).replace(/\n/g, '<br>');
+            }
+            if (typeof DOMPurify === 'undefined') {
+                console.warn("DOMPurify library not loaded. Falling back to basic HTML formatting.");
                 return escapeHtml(rawContent).replace(/\n/g, '<br>');
             }
 
+            // Configure Marked for GitHub Flavored Markdown
+            // This ensures code blocks, tables, checklists, etc. are properly rendered
+            marked.setOptions({
+                gfm: true,          // GitHub Flavored Markdown
+                breaks: true,       // Convert \n to <br>
+                headerIds: true,    // Add IDs to headers
+                mangle: false,      // Don't mangle header IDs
+                pedantic: false,    // Don't be pedantic
+                smartLists: true,   // Use smart lists
+                smartypants: true   // Use smart typography
+            });
+
             // 1. Parse Markdown to HTML using Marked.js
-            // Enable GitHub Flavored Markdown and convert line breaks to <br> tags
-            const dirtyHtml = marked.parse(rawContent, { gfm: true, breaks: true });
+            const dirtyHtml = marked.parse(rawContent);
 
             // 2. Sanitize the generated HTML using DOMPurify
-            // Allow common HTML tags needed for formatting (bold, italic, lists, code blocks, etc.)
-            const cleanHtml = DOMPurify.sanitize(dirtyHtml, { USE_PROFILES: { html: true } });
+            // Allow common HTML tags and attributes needed for formatting
+            const cleanHtml = DOMPurify.sanitize(dirtyHtml, {
+                USE_PROFILES: { html: true },
+                ALLOWED_TAGS: [
+                    'p', 'br', 'b', 'i', 'strong', 'em', 'mark', 'small', 'del', 'ins', 'sub', 'sup',
+                    'ul', 'ol', 'li', 'dl', 'dt', 'dd', 'a', 'blockquote', 'code', 'pre', 'hr',
+                    'table', 'thead', 'tbody', 'tr', 'th', 'td', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+                    'div', 'span', 'img'
+                ],
+                ALLOWED_ATTR: [
+                    'href', 'target', 'rel', 'id', 'class', 'style', 'src', 'alt', 'title'
+                ]
+            });
 
             return cleanHtml;
 
@@ -156,18 +181,18 @@
             });
         }
 
-        // Render Streaming Assistant Message (if applicable)
-        if (state.isStreaming) {
-            const streamingEl = document.createElement('div');
-            const formattedStreamingContent = formatMessageContent(state.assistantStreamContent); // Format streaming content
-            streamingEl.className = 'message message-ai streaming';
-            streamingEl.innerHTML = `
+        // Render AI response message if loading or streaming
+        if (state.isLoading || state.isStreaming) {
+            const aiResponseEl = document.createElement('div');
+            const formattedStreamingContent = state.isStreaming ? formatMessageContent(state.assistantStreamContent) : '';
+            aiResponseEl.className = 'message message-ai streaming';
+            aiResponseEl.innerHTML = `
                  <span class="codicon codicon-hubot message-icon" title="AI"></span>
                  <div class="message-content">
-                     ${formattedStreamingContent}<span class="blinking-cursor">▎</span>
+                     ${formattedStreamingContent}<span class="blinking-cursor"></span>
                  </div>
              `;
-            messagesDiv.appendChild(streamingEl);
+            messagesDiv.appendChild(aiResponseEl);
         }
 
         // Render Loading/Error Indicators (below messages)
@@ -175,14 +200,13 @@
         if (state.isLoading) {
             const loadingEl = document.createElement('div');
             loadingEl.className = 'loading-indicator info-message';
-            loadingEl.innerHTML = '<span class="codicon codicon-loading codicon-modifier-spin"></span> Waiting for Security Champion...';
             loadingIndicatorContainer.appendChild(loadingEl);
         }
         if (state.limitReachedError) {
-             const limitErrorEl = document.createElement('div');
-             limitErrorEl.className = 'error-message';
-             limitErrorEl.innerHTML = `<span class="codicon codicon-stop-circle"></span> ${escapeHtml(state.limitReachedError)}`;
-             loadingIndicatorContainer.appendChild(limitErrorEl);
+            const limitErrorEl = document.createElement('div');
+            limitErrorEl.className = 'error-message';
+            limitErrorEl.innerHTML = `<span class="codicon codicon-stop-circle"></span> ${escapeHtml(state.limitReachedError)}`;
+            loadingIndicatorContainer.appendChild(limitErrorEl);
         } else if (state.error) {
             const errorEl = document.createElement('div');
             errorEl.className = 'error-message';
@@ -214,7 +238,7 @@
      * @param {string | null} projectId - Current project ID.
      */
     function renderVulnSelect(vulnerabilities, selectedVulnId, isVulnListLoading, projectId) {
-        if (!vulnSelect || !vulnSelectorDiv) return;
+        if (!vulnSelect || !vulnSelectorDiv) { return; }
 
         const hasProject = !!projectId;
         const hasVulns = vulnerabilities && vulnerabilities.length > 0;
@@ -232,10 +256,10 @@
         vulnSelect.disabled = false;
 
         if (!shouldShowSelector) {
-             // Use a more generic default if no vulns available yet or no project
-             vulnSelect.innerHTML = '<option value="">Select vulnerability (Optional)...</option>';
-             return;
-         }
+            // Use a more generic default if no vulns available yet or no project
+            vulnSelect.innerHTML = '<option value="">Select vulnerability (Optional)...</option>';
+            return;
+        }
 
 
         // Populate Dropdown
@@ -249,9 +273,9 @@
         // Group vulnerabilities by type
         const groups = { sast: [], iac: [], sca: [] };
         (vulnerabilities || []).forEach(v => {
-            if (v.type === 'sast') groups.sast.push(v);
-            else if (v.type === 'iac') groups.iac.push(v);
-            else if (v.type === 'sca') groups.sca.push(v); // Include SCA if present
+            if (v.type === 'sast') { groups.sast.push(v); }
+            else if (v.type === 'iac') { groups.iac.push(v); }
+            else if (v.type === 'sca') { groups.sca.push(v); } // Include SCA if present
         });
 
         const createOptionElement = function (vuln) {
@@ -265,14 +289,14 @@
 
         // Add options grouped by type
         const addGroup = (label, group) => {
-             if (group.length > 0) {
-                 const optgroup = document.createElement('optgroup');
-                 optgroup.label = label;
-                 group.sort((a, b) => a.name.localeCompare(b.name)) // Sort alphabetically within group
-                      .forEach(v => optgroup.appendChild(createOptionElement(v)));
-                 vulnSelect.appendChild(optgroup);
-             }
-         };
+            if (group.length > 0) {
+                const optgroup = document.createElement('optgroup');
+                optgroup.label = label;
+                group.sort((a, b) => a.name.localeCompare(b.name)) // Sort alphabetically within group
+                    .forEach(v => optgroup.appendChild(createOptionElement(v)));
+                vulnSelect.appendChild(optgroup);
+            }
+        };
 
         addGroup("Code Vulnerabilities (SAST)", groups.sast);
         addGroup("Infrastructure Vulnerabilities (IaC)", groups.iac);
@@ -300,8 +324,8 @@
                 // Extract necessary details safely
                 const name = selectedVuln.vulnerability?.name || selectedVuln.id || 'Unknown Vulnerability';
                 let displayPath = '(path unknown)';
-                if (selectedVuln.path) displayPath = selectedVuln.path.split(/[\\/]/).pop(); // Get basename
-                else if (selectedVuln.scaFilePath) displayPath = selectedVuln.scaFilePath.split(/[\\/]/).pop();
+                if (selectedVuln.path) { displayPath = selectedVuln.path.split(/[\\/]/).pop(); } // Get basename
+                else if (selectedVuln.scaFilePath) { displayPath = selectedVuln.scaFilePath.split(/[\\/]/).pop(); }
 
                 const displayName = selectedVuln.vulnerability?.vulnerabilityType === 'sca'
                     ? `${selectedVuln.scaPackageName || 'Package'}@${selectedVuln.scaPackageVersion || 'Version'}`
@@ -313,7 +337,7 @@
                 contextDisplayDiv.classList.remove('hidden'); // Show the div
                 return; // Exit after showing
             } else {
-                 console.warn(`Selected vulnerability ID ${selectedVulnId} not found in full data.`);
+                console.warn(`Selected vulnerability ID ${selectedVulnId} not found in full data.`);
             }
         }
 
@@ -332,13 +356,13 @@
         const isDisabled = !!state.isLoading || !!state.isStreaming || !!state.limitReachedError;
         const isInputEmpty = !messageInput || messageInput.value.trim().length === 0;
 
-        if (sendButton) sendButton.disabled = isDisabled || isInputEmpty;
+        if (sendButton) { sendButton.disabled = isDisabled || isInputEmpty; }
         if (messageInput) {
             messageInput.disabled = isDisabled;
             messageInput.placeholder = isDisabled ? "Waiting for response..." : "Ask the Security Champion...";
         }
-        if (resetButton) resetButton.disabled = !!state.isLoading || !!state.isStreaming; // Disable during processing
-        if (vulnSelect) vulnSelect.disabled = isDisabled || state.isVulnListLoading; // Disable during processing or list load
+        if (resetButton) { resetButton.disabled = !!state.isLoading || !!state.isStreaming; } // Disable during processing
+        if (vulnSelect) { vulnSelect.disabled = isDisabled || state.isVulnListLoading; } // Disable during processing or list load
     }
 
 
@@ -346,7 +370,7 @@
 
     /** Handles sending the message text to the extension provider. */
     function handleSendMessage() {
-        if (!messageInput || !sendButton) return;
+        if (!messageInput || !sendButton) { return; }
         const text = messageInput.value.trim();
         // Prevent sending if disabled or empty
         if (!text || currentState.isLoading || currentState.isStreaming || currentState.limitReachedError) {
@@ -354,17 +378,37 @@
             return;
         }
 
-        // Send message to the extension
+        // --- 1. Send message to the extension ---
         vscode.postMessage({ command: 'sendMessage', text: text });
 
-        // Clear input immediately and simulate loading state
+        // --- 2. Clean the input ---
         messageInput.value = '';
-        // Trigger an input event manually to potentially update other UI based on emptiness
+        // Trigger the 'input' event to update the send button state (via updateInputState in the listener)
         messageInput.dispatchEvent(new Event('input'));
-        updateInputState({ ...currentState, isLoading: true }); // Show loading feedback quickly
 
-        // Context (selectedVulnerabilityId) is *not* cleared here anymore.
-        // It persists until explicitly changed by the user via the dropdown or reset.
+        // --- 3. IMMEDIATE UI UPDATE (Optimistic Rendering) ---
+        // Create a copy of the current state and modify it to reflect the beginning of loading
+        const optimisticState = {
+            ...currentState, // Keep the current state (messages, context, etc.)
+            isLoading: true, // Indicate that loading has begun NOW
+            error: null,     // Clear previous errors when sending a new message
+            limitReachedError: null, // Same for limit errors
+            // Ensure existing messages are included in this optimistic rendering
+            messages: [...(currentState.messages || [])]
+        };
+
+        // Call renderUI with this optimistic state to display immediately
+        // the placeholder AI with the blinking cursor.
+        renderUI(optimisticState);
+
+        // Updating the input state controls is also important,
+        // renderUI calls updateInputState at the end, but we can do it here explicitly
+        // to ensure the input is disabled immediately.
+        updateInputState(optimisticState);
+        // --- End of modification ---
+
+        // The context (selectedVulnerabilityId) is NOT cleared here.
+        // It persists until it is explicitly changed or reset.
     }
 
     /** Handles resetting the conversation state. */
@@ -403,16 +447,20 @@
 
     // Vulnerability Select Dropdown Change
     if (vulnSelect) {
+        console.log("ChatbotJS: Adding change listener to vulnerability select.");
+
         vulnSelect.addEventListener('change', function (e) {
             const selectedId = e.target.value;
-            // Find the full vulnerability data object corresponding to the selected ID
-            const selectedVulnFull = selectedId && fullVulnerabilitiesData
-                ? fullVulnerabilitiesData.find(v => v?.id === selectedId) || null // Ensure null if not found
-                : null;
-            // Send the *full* object (or null) back to the provider to update the context
-            vscode.postMessage({ command: 'setSelectedVulnerability', vulnerability: selectedVulnFull });
+            console.log(`ChatbotJS: Vulnerability selection changed. Selected ID: ${selectedId}`);
+
+            vscode.postMessage({
+                command: 'vulnerabilitySelected',
+                vulnerabilityId: selectedId || null
+            });
         });
-    } else { console.error("Vulnerability select dropdown not found!"); }
+    } else {
+        console.error("ChatbotJS: Vulnerability select dropdown element (#vuln-select) not found!");
+    }
 
     // Listener for state updates FROM the extension provider
     window.addEventListener('message', function (event) {
@@ -437,8 +485,8 @@
     // --- Request Initial Data Load if Necessary ---
     // Request vulnerability list load if projectId is set but list is empty and not already loading
     const needsInitialVulnLoad = !!currentState.projectId &&
-                                 (!currentState.vulnerabilities || currentState.vulnerabilities.length === 0) &&
-                                 !currentState.isVulnListLoading;
+        (!currentState.vulnerabilities || currentState.vulnerabilities.length === 0) &&
+        !currentState.isVulnListLoading;
     if (needsInitialVulnLoad) {
         console.log("[Chatbot Webview] Requesting initial vulnerability load.");
         vscode.postMessage({ command: 'loadInitialData' });

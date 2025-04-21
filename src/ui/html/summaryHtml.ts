@@ -1,9 +1,9 @@
 // src/ui/html/summaryHtml.ts
-import * as vscode from 'vscode';
 import { escape } from 'lodash';
-import { ScanProjectInfoDto, CountVulnerabilitiesCountByType } from '../../dtos/result/response/get-project-vulnerabilities-response.dto';
+import * as vscode from 'vscode';
+import { CountVulnerabilitiesCountByType, ScanProjectInfoDto } from '../../dtos/result/response/get-project-vulnerabilities-response.dto';
 import { getNonce } from '../../utilities/utils';
-import { getCommonAssetUris, getCodiconStyleSheet } from './commonHtmlUtils';
+import { getCodiconStyleSheet, getCommonAssetUris } from './commonHtmlUtils';
 
 type SummaryData = {
     total?: number;
@@ -65,7 +65,7 @@ export function getSummaryViewHtml(
             </div>
         `;
     } else if (summaryData.isReady) {
-         contentHtml = `
+        contentHtml = `
              <div class="info-container">
                 ${readyIcon}
                 <p>Ready to scan your project.</p>

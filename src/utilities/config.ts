@@ -1,6 +1,6 @@
 // src/utilities/config.ts
 import * as vscode from 'vscode';
-import { CONFIG_API_BASE_URL, DEFAULT_API_BASE_URL, CONFIG_PROJECT_ID } from '../constants/constants';
+import { CONFIG_API_BASE_URL, CONFIG_PROJECT_ID, DEFAULT_API_BASE_URL } from '../constants/constants';
 
 /**
  * Retrieves the API Base URL from VS Code settings.

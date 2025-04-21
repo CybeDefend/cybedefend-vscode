@@ -1,24 +1,21 @@
 // /Users/julienzammit/Documents/GitHub/extensions/cybedefend-vscode/src/api/apiService.ts
-import * as vscode from 'vscode';
-import axios, { AxiosInstance, AxiosError, AxiosRequestHeaders } from 'axios';
+import axios, { AxiosError, AxiosInstance, AxiosRequestHeaders } from 'axios';
 import FormData from 'form-data';
 import * as fs from 'fs';
 import type { AuthService } from '../auth/authService';
-import { StartScanResponseDto } from '../dtos/security-scanning/response/start-scan-response.dto';
-import { GetProjectVulnerabilitiesResponseDto } from '../dtos/result/response/get-project-vulnerabilities-response.dto';
-import { GetProjectVulnerabilityByIdResponseDto } from '../dtos/result/response/get-project-vulnerability-by-id-response.dto';
-import { ScanResponseDto } from '../dtos/security-scanning/response/scan-response.dto';
-import { getApiBaseUrl } from '../utilities/config';
 import { AddMessageConversationRequestDto } from '../dtos/ai/request/add-message-conversation-request.dto';
 import { StartConversationRequestDto } from '../dtos/ai/request/start-conversation-request.dto';
 import { OrganizationInformationsResponseDto } from '../dtos/organization/organization-informations-response.dto';
-import { GetRepositoriesResponseDto } from '../dtos/repository/get-repositories-response.dto';
 import { PaginatedProjectsAllInformationsResponseDto } from '../dtos/project/paginate-project-all-informations-response.dto';
-import { TeamInformationsResponseDto } from '../dtos/team/team-informations-response.dto';
-import { ProjectCreateRequestDto } from '../dtos/project/project-create-request.dto';
 import { ProjectInformationsResponseDto } from '../dtos/project/project-informations-response.dto';
-import { LinkRepositoryRequestDto } from '../dtos/repository/link-repository-request.dto';
+import { GetRepositoriesResponseDto } from '../dtos/repository/get-repositories-response.dto';
 import { RepositoryDto as LinkRepositoryResponseDto } from '../dtos/repository/repository.dto';
+import { GetProjectVulnerabilitiesResponseDto } from '../dtos/result/response/get-project-vulnerabilities-response.dto';
+import { GetProjectVulnerabilityByIdResponseDto } from '../dtos/result/response/get-project-vulnerability-by-id-response.dto';
+import { ScanResponseDto } from '../dtos/security-scanning/response/scan-response.dto';
+import { StartScanResponseDto } from '../dtos/security-scanning/response/start-scan-response.dto';
+import { TeamInformationsResponseDto } from '../dtos/team/team-informations-response.dto';
+import { getApiBaseUrl } from '../utilities/config';
 
 export type ScanType = 'sast' | 'iac' | 'sca';
 
@@ -85,7 +82,7 @@ export class ApiService {
                 {
                     headers: formData.getHeaders ? formData.getHeaders() : undefined,
                     timeout: 180000
-                 }
+                }
             );
             const responseData = response.data as any;
             return new StartScanResponseDto(
@@ -115,10 +112,10 @@ export class ApiService {
                 `/project/${projectId}/results/${scanType}`,
                 { params: queryParams }
             );
-             if (!response.data?.vulnerabilities) {
-                 console.warn(`[ApiService] ${operation} response missing 'vulnerabilities' array for projectId ${projectId}.`);
-                 const baseResponse = response.data || { projectId: projectId, total: 0, vulnerabilities: [] };
-                 return { ...baseResponse, vulnerabilities: [] };
+            if (!response.data?.vulnerabilities) {
+                console.warn(`[ApiService] ${operation} response missing 'vulnerabilities' array for projectId ${projectId}.`);
+                const baseResponse = response.data || { projectId: projectId, total: 0, vulnerabilities: [] };
+                return { ...baseResponse, vulnerabilities: [] };
             }
             return response.data;
         } catch (error) {
@@ -152,7 +149,7 @@ export class ApiService {
         }
     }
 
-     async getVulnerabilityDetails(
+    async getVulnerabilityDetails(
         projectId: string, // Accept projectId here
         vulnerabilityId: string,
         scanType: ScanType
@@ -186,55 +183,55 @@ export class ApiService {
     async startConversation(requestDto: StartConversationRequestDto): Promise<InitiateConversationResponse> {
         const operation = 'startConversation';
         if (!requestDto.projectId) {
-             const error = new Error(`[ApiService] ${operation} Error: Project ID is required.`);
-             console.error(error.message);
-             throw error;
+            const error = new Error(`[ApiService] ${operation} Error: Project ID is required.`);
+            console.error(error.message);
+            throw error;
         }
         const projectId = requestDto.projectId;
         try {
             const body = {
-                 isVulnerabilityConversation: requestDto.isVulnerabilityConversation,
-                 vulnerabilityId: requestDto.vulnerabilityId,
-                 vulnerabilityType: requestDto.vulnerabilityType,
-                 projectId: projectId
+                isVulnerabilityConversation: requestDto.isVulnerabilityConversation,
+                vulnerabilityId: requestDto.vulnerabilityId,
+                vulnerabilityType: requestDto.vulnerabilityType,
+                projectId: projectId
             };
             const response = await this.axiosInstance.post<InitiateConversationResponse>(
-                 `/project/${projectId}/ai/conversation/start`,
-                 body
+                `/project/${projectId}/ai/conversation/start`,
+                body
             );
             if (response.data && typeof response.data.conversationId === 'string') {
-                 return response.data;
+                return response.data;
             } else {
-                 throw new Error(`Unexpected response format from ${operation}. Expected { conversationId: string }. Got: ${JSON.stringify(response.data)}`);
+                throw new Error(`Unexpected response format from ${operation}. Expected { conversationId: string }. Got: ${JSON.stringify(response.data)}`);
             }
         } catch (error) {
-             this.handleApiError(error, operation, projectId);
-             throw error;
+            this.handleApiError(error, operation, projectId);
+            throw error;
         }
     }
 
     async continueConversation(requestDto: AddMessageConversationRequestDto): Promise<InitiateConversationResponse> {
         const operation = 'continueConversation';
-         if (!requestDto.projectId || !requestDto.idConversation) {
-             const error = new Error(`[ApiService] ${operation} Error: Project ID and Conversation ID are required.`);
-             console.error(error.message);
-             throw error;
+        if (!requestDto.projectId || !requestDto.idConversation) {
+            const error = new Error(`[ApiService] ${operation} Error: Project ID and Conversation ID are required.`);
+            console.error(error.message);
+            throw error;
         }
         const { projectId, idConversation, message } = requestDto;
         try {
-             const body = { message };
-             const response = await this.axiosInstance.post<InitiateConversationResponse>(
-                 `/project/${projectId}/ai/conversation/${idConversation}/message`,
-                 body
-             );
-             if (response.data && typeof response.data.conversationId === 'string') {
-                 return response.data;
-             } else {
-                  throw new Error(`Unexpected response format from ${operation}. Expected { conversationId: string }. Got: ${JSON.stringify(response.data)}`);
-             }
+            const body = { message };
+            const response = await this.axiosInstance.post<InitiateConversationResponse>(
+                `/project/${projectId}/ai/conversation/${idConversation}/message`,
+                body
+            );
+            if (response.data && typeof response.data.conversationId === 'string') {
+                return response.data;
+            } else {
+                throw new Error(`Unexpected response format from ${operation}. Expected { conversationId: string }. Got: ${JSON.stringify(response.data)}`);
+            }
         } catch (error) {
-             this.handleApiError(error, operation, projectId);
-             throw error;
+            this.handleApiError(error, operation, projectId);
+            throw error;
         }
     }
 
@@ -243,8 +240,8 @@ export class ApiService {
         try {
             const response = await this.axiosInstance.get<OrganizationInformationsResponseDto[]>('/organizations');
             if (!Array.isArray(response.data)) {
-                 console.error(`[ApiService] ${operation}: Invalid response format. Expected an array. Got:`, response.data);
-                 throw new Error(`Invalid response format from ${operation}. Expected an array.`);
+                console.error(`[ApiService] ${operation}: Invalid response format. Expected an array. Got:`, response.data);
+                throw new Error(`Invalid response format from ${operation}. Expected an array.`);
             }
             return response.data;
         } catch (error) {
@@ -257,7 +254,7 @@ export class ApiService {
         const operation = 'getRepositories';
         try {
             const response = await this.axiosInstance.get<GetRepositoriesResponseDto>(`/organization/${organizationId}/github/repositories`);
-             if (!response.data || !Array.isArray(response.data.repositories)) {
+            if (!response.data || !Array.isArray(response.data.repositories)) {
                 console.warn(`[ApiService] ${operation}: Response format might be invalid for organization ${organizationId}.`, response.data);
                 return { repositories: [], organizationId: organizationId };
             }
@@ -272,9 +269,9 @@ export class ApiService {
         const operation = 'getTeams';
         try {
             const response = await this.axiosInstance.get<TeamInformationsResponseDto[]>(`/organization/${organizationId}/teams`);
-             if (!Array.isArray(response.data)) {
-                 console.error(`[ApiService] ${operation}: Invalid response format for organization ${organizationId}. Expected an array. Got:`, response.data);
-                 throw new Error(`Invalid response format from ${operation}. Expected an array.`);
+            if (!Array.isArray(response.data)) {
+                console.error(`[ApiService] ${operation}: Invalid response format for organization ${organizationId}. Expected an array. Got:`, response.data);
+                throw new Error(`Invalid response format from ${operation}. Expected an array.`);
             }
             return response.data;
         } catch (error) {
@@ -286,11 +283,11 @@ export class ApiService {
     async createProject(teamId: string, projectName: string): Promise<ProjectInformationsResponseDto> {
         const operation = 'createProject';
         try {
-            const requestBody = { name: projectName }; // Body simplifié basé sur l'API
+            const requestBody = { name: projectName };
             const response = await this.axiosInstance.post<ProjectInformationsResponseDto>(`/team/${teamId}/project`, requestBody);
-             if (!response.data || !response.data.projectId) {
+            if (!response.data || !response.data.projectId) {
                 console.error(`[ApiService] ${operation}: Invalid response format. Missing projectId.`, response.data);
-                 throw new Error(`Invalid response format from ${operation}. Missing projectId.`);
+                throw new Error(`Invalid response format from ${operation}. Missing projectId.`);
             }
             return response.data;
         } catch (error) {
@@ -299,15 +296,15 @@ export class ApiService {
         }
     }
 
-     async linkProject(organizationId: string, projectId: string, repositoryId: string): Promise<LinkRepositoryResponseDto> {
+    async linkProject(organizationId: string, projectId: string, repositoryId: string): Promise<LinkRepositoryResponseDto> {
         const operation = 'linkProject';
         try {
             const requestBody = { repositoryId: repositoryId };
             const response = await this.axiosInstance.post<LinkRepositoryResponseDto>(
                 `/organization/${organizationId}/project/${projectId}/github/link`, requestBody);
-             if (!response.data || !response.data.id || response.data.projectId !== projectId) {
+            if (!response.data || !response.data.id || response.data.projectId !== projectId) {
                 console.error(`[ApiService] ${operation}: Invalid response format or projectId mismatch.`, response.data);
-                 throw new Error(`Invalid response format or projectId mismatch from ${operation}.`);
+                throw new Error(`Invalid response format or projectId mismatch from ${operation}.`);
             }
             return response.data;
         } catch (error) {
@@ -324,9 +321,9 @@ export class ApiService {
             const params = { page: page.toString(), pageSize: pageSize.toString(), search: searchQuery };
             const response = await this.axiosInstance.get<PaginatedProjectsAllInformationsResponseDto>(
                 `/organization/${organizationId}/projects`, { params });
-             if (!response.data || !Array.isArray(response.data.projects)) {
+            if (!response.data || !Array.isArray(response.data.projects)) {
                 console.warn(`[ApiService] ${operation}: Response format might be invalid for organization ${organizationId}.`, response.data);
-                 return { projects: [], totalPages: 0, totalProjects: 0, mainStatistics: response.data?.mainStatistics };
+                return { projects: [], totalPages: 0, totalProjects: 0, mainStatistics: response.data?.mainStatistics };
             }
             return response.data;
         } catch (error) {
@@ -338,29 +335,29 @@ export class ApiService {
     private handleApiError(error: any, operation: string, contextInfo?: string): void {
         let userMessage = `Operation '${operation}' failed${contextInfo ? ` (${contextInfo})` : ''}.`;
         if (axios.isAxiosError(error)) {
-             const axiosError = error as AxiosError<any>;
-             if (axiosError.response) {
-                 const status = axiosError.response.status;
-                 const data = axiosError.response.data;
-                 const apiErrorMessage = data?.message || data?.error || (typeof data === 'object' ? JSON.stringify(data) : data);
-                 userMessage = `API Error (${status}) during ${operation}: ${apiErrorMessage || 'No additional details'}`;
+            const axiosError = error as AxiosError<any>;
+            if (axiosError.response) {
+                const status = axiosError.response.status;
+                const data = axiosError.response.data;
+                const apiErrorMessage = data?.message || data?.error || (typeof data === 'object' ? JSON.stringify(data) : data);
+                userMessage = `API Error (${status}) during ${operation}: ${apiErrorMessage || 'No additional details'}`;
 
-                 if (status === 401) userMessage = 'API Authentication Failed: Invalid or missing API Key. Please check extension settings or use the "Update API Key" command.';
-                 else if (status === 403) userMessage = `API Authorization Failed for ${operation}: Access Denied. Check permissions or Project ID validity.`;
-                 else if (status === 404) userMessage = `API Error: Resource not found for ${operation}. Check context: ${contextInfo || 'N/A'}.`;
-                 else if (status === 400) userMessage = `API Error: Invalid Request for ${operation}. ${apiErrorMessage || 'Check input data.'}`;
-                 else if (status === 429) userMessage = `API Rate Limit Exceeded for ${operation}. Please try again later. ${apiErrorMessage || ''}`;
-                 else if (status >= 500) userMessage = `Server Error (${status}) during ${operation}. Please try again later or contact support. ${apiErrorMessage || ''}`;
+                if (status === 401) { userMessage = 'API Authentication Failed: Invalid or missing API Key. Please check extension settings or use the "Update API Key" command.'; }
+                else if (status === 403) { userMessage = `API Authorization Failed for ${operation}: Access Denied. Check permissions or Project ID validity.`; }
+                else if (status === 404) { userMessage = `API Error: Resource not found for ${operation}. Check context: ${contextInfo || 'N/A'}.`; }
+                else if (status === 400) { userMessage = `API Error: Invalid Request for ${operation}. ${apiErrorMessage || 'Check input data.'}`; }
+                else if (status === 429) { userMessage = `API Rate Limit Exceeded for ${operation}. Please try again later. ${apiErrorMessage || ''}`; }
+                else if (status >= 500) { userMessage = `Server Error (${status}) during ${operation}. Please try again later or contact support. ${apiErrorMessage || ''}`; }
 
-             } else if (axiosError.request) {
-                 userMessage = `Network Error for ${operation}: Could not reach the server at ${this.axiosInstance.defaults.baseURL}. Check API URL configuration and network connection.`;
-             } else {
-                 userMessage = `Request Setup Error for ${operation}: ${error.message}`;
-             }
+            } else if (axiosError.request) {
+                userMessage = `Network Error for ${operation}: Could not reach the server at ${this.axiosInstance.defaults.baseURL}. Check API URL configuration and network connection.`;
+            } else {
+                userMessage = `Request Setup Error for ${operation}: ${error.message}`;
+            }
         } else if (error instanceof Error) {
-             userMessage = `Unexpected Error during ${operation}: ${error.message}`;
+            userMessage = `Unexpected Error during ${operation}: ${error.message}`;
         } else {
-             userMessage = `An unexpected error occurred during ${operation}.`;
+            userMessage = `An unexpected error occurred during ${operation}.`;
         }
         console.error(`[ApiService] ${userMessage}`, error);
 

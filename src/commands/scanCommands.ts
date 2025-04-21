@@ -1,20 +1,20 @@
 // src/commands/scanCommands.ts
-import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 import archiver from 'archiver';
-import { glob } from 'glob';
 import axios from 'axios';
-import { ApiService, ScanType } from '../api/apiService'; // Assure-toi que ScanType est exporté depuis apiService ou défini globalement
-import { SummaryViewProvider } from '../providers/summaryViewProvider';
-import { SastViewProvider } from '../providers/sastViewProvider';
-import { IacViewProvider } from '../providers/iacViewProvider';
-import { ScaViewProvider } from '../providers/scaViewProvider';
-import { createMockVulnerabilitiesResponse } from '../test/mocks/mockVulnerabilities'; // Ajuste le chemin si nécessaire
+import * as fs from 'fs';
+import { glob } from 'glob';
+import * as os from 'os';
+import * as path from 'path';
+import * as vscode from 'vscode';
+import { ApiService } from '../api/apiService';
 import { DetailedVulnerability, IacVulnerabilityDetectionDto, SastVulnerabilityDetectionDto, ScaVulnerabilityWithCvssDto } from '../dtos/result/details';
 import { CountVulnerabilitiesCountByType, ScanProjectInfoDto } from '../dtos/result/response/get-project-vulnerabilities-response.dto';
 import { ChatbotViewProvider } from '../providers/chatbotViewProvider';
+import { IacViewProvider } from '../providers/iacViewProvider';
+import { SastViewProvider } from '../providers/sastViewProvider';
+import { ScaViewProvider } from '../providers/scaViewProvider';
+import { SummaryViewProvider } from '../providers/summaryViewProvider';
+import { createMockVulnerabilitiesResponse } from '../test/mocks/mockVulnerabilities';
 
 const POLLING_INTERVAL_MS = 5000; // 5 seconds polling interval
 const MAX_POLLING_ATTEMPTS = 60; // 5 minutes timeout (60 * 5s)
@@ -78,7 +78,7 @@ export async function startScanCommand(
                     );
                     vscode.window.showInformationMessage(`Mock Scan Complete: Displaying ${mockResponse.vulnerabilities.length} mock vulnerabilities.`);
                 } catch (mockError: any) {
-                     summaryProvider.updateError(`Failed to load mock data: ${mockError.message}`);
+                    summaryProvider.updateError(`Failed to load mock data: ${mockError.message}`);
                 }
             }
         );
@@ -115,10 +115,9 @@ export async function startScanCommand(
                 summaryProvider.setLoading(true, "Initiating API scan...");
                 const startResponse = await apiService.startScan(projectId, zipFilePath);
 
-                // --- TODO: Critical adaptation needed here ---
-                 scanId = startResponse.message; // Or startResponse.scanId ? Verify your DTO and API!
-                 if (!scanId) { throw new Error('API did not return a valid scan ID.'); }
-                 if (token.isCancellationRequested) { throw new Error('Cancelled by user.'); }
+                scanId = startResponse.message;
+                if (!scanId) { throw new Error('API did not return a valid scan ID.'); }
+                if (token.isCancellationRequested) { throw new Error('Cancelled by user.'); }
 
                 // Step C: Poll for scan completion
                 progress.report({ increment: 30, message: `Scan ${scanId} running...` });
@@ -131,49 +130,49 @@ export async function startScanCommand(
                 progress.report({ increment: 80, message: 'Fetching results...' });
                 summaryProvider.setLoading(true, "Fetching results...");
 
-                 const [sastResults, iacResults, scaResults] = await Promise.all([
-                     apiService.getScanResults(projectId, 'sast', { pageSizeNumber: 500 }).catch(e => { console.error("Failed to fetch SAST results:", e); return null; }),
-                     apiService.getScanResults(projectId, 'iac', { pageSizeNumber: 500 }).catch(e => { console.error("Failed to fetch IAC results:", e); return null; }),
-                     apiService.getScanResults(projectId, 'sca', { pageSizeNumber: 500 }).catch(e => { console.error("Failed to fetch SCA results:", e); return null; })
-                 ]);
-                 if (token.isCancellationRequested) { throw new Error('Cancelled.'); }
+                const [sastResults, iacResults, scaResults] = await Promise.all([
+                    apiService.getScanResults(projectId, 'sast', { pageSizeNumber: 500 }).catch(e => { console.error("Failed to fetch SAST results:", e); return null; }),
+                    apiService.getScanResults(projectId, 'iac', { pageSizeNumber: 500 }).catch(e => { console.error("Failed to fetch IAC results:", e); return null; }),
+                    apiService.getScanResults(projectId, 'sca', { pageSizeNumber: 500 }).catch(e => { console.error("Failed to fetch SCA results:", e); return null; })
+                ]);
+                if (token.isCancellationRequested) { throw new Error('Cancelled.'); }
 
                 // Step E: Process results and update UI
                 progress.report({ increment: 100, message: 'Processing results...' });
 
-                 const firstValidResponse = sastResults || iacResults || scaResults;
-                 const allVulnerabilities = [
-                     ...(sastResults?.vulnerabilities || []),
-                     ...(iacResults?.vulnerabilities || []),
-                     ...(scaResults?.vulnerabilities || [])
-                 ];
+                const firstValidResponse = sastResults || iacResults || scaResults;
+                const allVulnerabilities = [
+                    ...(sastResults?.vulnerabilities || []),
+                    ...(iacResults?.vulnerabilities || []),
+                    ...(scaResults?.vulnerabilities || [])
+                ];
 
-                 if (firstValidResponse) {
-                     const summaryData = {
-                         total: allVulnerabilities.length,
-                         counts: new CountVulnerabilitiesCountByType(
-                             sastResults?.vulnerabilities?.length || 0,
-                             iacResults?.vulnerabilities?.length || 0,
-                             scaResults?.vulnerabilities?.length || 0
-                         ),
-                         scanInfo: firstValidResponse.scanProjectInfo ?? new ScanProjectInfoDto(scanId, 'COMPLETED', new Date())
-                     };
-                     summaryProvider.updateSummary(summaryData);
-                 } else {
-                      throw new Error("Failed to fetch any scan results.");
-                 }
+                if (firstValidResponse) {
+                    const summaryData = {
+                        total: allVulnerabilities.length,
+                        counts: new CountVulnerabilitiesCountByType(
+                            sastResults?.vulnerabilities?.length || 0,
+                            iacResults?.vulnerabilities?.length || 0,
+                            scaResults?.vulnerabilities?.length || 0
+                        ),
+                        scanInfo: firstValidResponse.scanProjectInfo ?? new ScanProjectInfoDto(scanId, 'COMPLETED', new Date())
+                    };
+                    summaryProvider.updateSummary(summaryData);
+                } else {
+                    throw new Error("Failed to fetch any scan results.");
+                }
 
-                 distributeFindingsToProviders(allVulnerabilities, sastProvider, iacProvider, scaProvider);
-                 console.log("[scanCommand] Scan complete. Refreshing chatbot vulnerability list.");
-                 chatbotProvider.refreshVulnerabilities();
-                 vscode.window.showInformationMessage(`Scan complete. Found ${allVulnerabilities.length} total vulnerabilities.`);
+                distributeFindingsToProviders(allVulnerabilities, sastProvider, iacProvider, scaProvider);
+                console.log("[scanCommand] Scan complete. Refreshing chatbot vulnerability list.");
+                chatbotProvider.refreshVulnerabilities();
+                vscode.window.showInformationMessage(`Scan complete. Found ${allVulnerabilities.length} total vulnerabilities.`);
 
             } catch (error: any) {
-                 handleCommandError(error, summaryProvider); // Show error in summary
-                 // Clear other views on error
-                 sastProvider.updateFindings([]);
-                 iacProvider.updateFindings([]);
-                 scaProvider.updateFindings([]);
+                handleCommandError(error, summaryProvider); // Show error in summary
+                // Clear other views on error
+                sastProvider.updateFindings([]);
+                iacProvider.updateFindings([]);
+                scaProvider.updateFindings([]);
             } finally {
                 // Step F: Cleanup zip file
                 if (zipFilePath) { await cleanupZipFile(zipFilePath); }
@@ -251,52 +250,52 @@ async function pollScanStatus(
  * @returns Promise resolving with the path to the created zip file.
  */
 async function createWorkspaceZip(workspacePath: string, token: vscode.CancellationToken): Promise<string> {
-     const tempDir = os.tmpdir();
-     const zipFileName = `cybedefend-scan-${Date.now()}.zip`;
-     const zipFilePath = path.join(tempDir, zipFileName);
+    const tempDir = os.tmpdir();
+    const zipFileName = `cybedefend-scan-${Date.now()}.zip`;
+    const zipFilePath = path.join(tempDir, zipFileName);
 
-     const output = fs.createWriteStream(zipFilePath);
-     const archive = archiver('zip', { zlib: { level: 9 } }); // Use compression
+    const output = fs.createWriteStream(zipFilePath);
+    const archive = archiver('zip', { zlib: { level: 9 } }); // Use compression
 
-     const archivePromise = new Promise<void>((resolve, reject) => {
-         let cancellationListener = token?.onCancellationRequested(() => {
-             archive.abort();
-             // Ensure stream is closed before unlinking, handle potential errors
-             output.close((err) => {
-                 fs.unlink(zipFilePath, (unlinkErr) => {
-                     reject(new Error('Cancelled by user.'));
-                 });
-             });
-         });
+    const archivePromise = new Promise<void>((resolve, reject) => {
+        let cancellationListener = token?.onCancellationRequested(() => {
+            archive.abort();
+            // Ensure stream is closed before unlinking, handle potential errors
+            output.close((err) => {
+                fs.unlink(zipFilePath, (unlinkErr) => {
+                    reject(new Error('Cancelled by user.'));
+                });
+            });
+        });
 
-         output.on('close', () => { cancellationListener?.dispose(); if (!token?.isCancellationRequested) { resolve(); } });
-         output.on('error', (err) => { cancellationListener?.dispose(); console.error('[ZipUtil] Output stream error:', err); reject(err); });
-         archive.on('warning', (err) => { if (err.code !== 'ENOENT') { cancellationListener?.dispose(); console.error('[ZipUtil] Archiver warning:', err); reject(err); } else { console.warn('[ZipUtil] Archiver warning (ENOENT ignored):', err); }});
-         archive.on('error', (err) => { cancellationListener?.dispose(); console.error('[ZipUtil] Archiver fatal error:', err); reject(err); });
-     });
+        output.on('close', () => { cancellationListener?.dispose(); if (!token?.isCancellationRequested) { resolve(); } });
+        output.on('error', (err) => { cancellationListener?.dispose(); console.error('[ZipUtil] Output stream error:', err); reject(err); });
+        archive.on('warning', (err) => { if (err.code !== 'ENOENT') { cancellationListener?.dispose(); console.error('[ZipUtil] Archiver warning:', err); reject(err); } else { console.warn('[ZipUtil] Archiver warning (ENOENT ignored):', err); } });
+        archive.on('error', (err) => { cancellationListener?.dispose(); console.error('[ZipUtil] Archiver fatal error:', err); reject(err); });
+    });
 
-     archive.pipe(output);
+    archive.pipe(output);
 
-     // Use glob for efficient file finding and exclusion
-     const files = await glob('**/*', {
-         cwd: workspacePath,
-         dot: false,         // Exclude dotfiles/folders like .git, .vscode
-         nodir: true,        // Include only files
-         ignore: ['node_modules/**', '.git/**', '**/.*', '.*', 'dist/**', 'out/**'], // Common ignores + build outputs
-         absolute: false     // Relative paths needed for archive structure
-     });
-      if (token.isCancellationRequested) throw new Error('Cancelled by user.');
+    // Use glob for efficient file finding and exclusion
+    const files = await glob('**/*', {
+        cwd: workspacePath,
+        dot: false,         // Exclude dotfiles/folders like .git, .vscode
+        nodir: true,        // Include only files
+        ignore: ['node_modules/**', '.git/**', '**/.*', '.*', 'dist/**', 'out/**'], // Common ignores + build outputs
+        absolute: false     // Relative paths needed for archive structure
+    });
+    if (token.isCancellationRequested) { throw new Error('Cancelled by user.'); }
 
-     // Add files to archive
-     for (const file of files) {
-          if (token.isCancellationRequested) throw new Error('Cancelled by user.');
-         const sourcePath = path.join(workspacePath, file);
-         archive.file(sourcePath, { name: file }); // name: use relative path inside archive
-     }
+    // Add files to archive
+    for (const file of files) {
+        if (token.isCancellationRequested) { throw new Error('Cancelled by user.'); }
+        const sourcePath = path.join(workspacePath, file);
+        archive.file(sourcePath, { name: file }); // name: use relative path inside archive
+    }
 
-     await archive.finalize(); // Wait for archive data to be written
-     await archivePromise;     // Wait for stream 'close' or 'error'
-     return zipFilePath;
+    await archive.finalize(); // Wait for archive data to be written
+    await archivePromise;     // Wait for stream 'close' or 'error'
+    return zipFilePath;
 }
 
 /**
@@ -304,11 +303,11 @@ async function createWorkspaceZip(workspacePath: string, token: vscode.Cancellat
  * @param zipFilePath Path to the zip file to delete.
  */
 async function cleanupZipFile(zipFilePath: string): Promise<void> {
-     try {
-         await fs.promises.unlink(zipFilePath);
-     } catch (cleanupError) {
-         console.error('[ZipUtil] Failed to delete temporary zip file:', cleanupError);
-     }
+    try {
+        await fs.promises.unlink(zipFilePath);
+    } catch (cleanupError) {
+        console.error('[ZipUtil] Failed to delete temporary zip file:', cleanupError);
+    }
 }
 
 /**

@@ -1,9 +1,9 @@
 // src/providers/summaryViewProvider.ts
 import * as vscode from 'vscode';
 // MODIFIÉ: Importer depuis le nouveau chemin via l'index
-import { getSummaryViewHtml } from '../ui/html';
-import { ScanProjectInfoDto, CountVulnerabilitiesCountByType } from '../dtos/result/response/get-project-vulnerabilities-response.dto';
 import { ProjectConfig } from '../auth/authService';
+import { CountVulnerabilitiesCountByType, ScanProjectInfoDto } from '../dtos/result/response/get-project-vulnerabilities-response.dto';
+import { getSummaryViewHtml } from '../ui/html';
 
 // Type SummaryData (gardé ici pour la clarté du provider, pourrait aussi être dans un fichier types)
 type SummaryData = {
@@ -52,13 +52,13 @@ export class SummaryViewProvider implements vscode.WebviewViewProvider, vscode.D
     private updateStateBasedOnWorkspace() {
         const hasWorkspace = !!vscode.workspace.workspaceFolders?.length;
         if (!hasWorkspace) {
-             this.updateState({ noWorkspace: true });
+            this.updateState({ noWorkspace: true });
         } else if (this._currentSummary.noWorkspace) {
             // Si un workspace vient d'être ouvert, passer en mode 'configuration manquante'
             // jusqu'à ce que extension.ts nous donne la config
             this.updateState({ noWorkspace: false, isConfigMissing: true });
         }
-     }
+    }
 
 
     public resolveWebviewView(
@@ -86,43 +86,43 @@ export class SummaryViewProvider implements vscode.WebviewViewProvider, vscode.D
 
         // Handle messages
         const messageSubscription = webviewView.webview.onDidReceiveMessage((data: any) => {
-             if (data.command === 'selectFolder') {
-                 vscode.commands.executeCommand('vscode.openFolder');
-             }
-         });
+            if (data.command === 'selectFolder') {
+                vscode.commands.executeCommand('vscode.openFolder');
+            }
+        });
 
         // Handle disposal
         const disposeSubscription = webviewView.onDidDispose(() => {
-             if (this._view === webviewView) { this._view = undefined; }
-             messageSubscription.dispose();
-             disposeSubscription.dispose();
-             this._disposables = this._disposables.filter(d => d !== messageSubscription && d !== disposeSubscription);
-         });
+            if (this._view === webviewView) { this._view = undefined; }
+            messageSubscription.dispose();
+            disposeSubscription.dispose();
+            this._disposables = this._disposables.filter(d => d !== messageSubscription && d !== disposeSubscription);
+        });
 
         this._disposables.push(messageSubscription, disposeSubscription);
     }
 
     /**
-     * Met à jour la vue avec la configuration projet obtenue.
-     * (Point 4 demandé)
-     * @param config La configuration projet (ou null si échoué/non disponible)
+     * Updates the view with the project configuration obtained.
+     * (Point 4 requested)
+     * @param config The project configuration (or null if failed/unavailable)
      */
     public updateConfiguration(config: ProjectConfig | null): void {
         this._currentConfig = config;
         if (config) {
-            // Config OK: passer en état prêt ou garder l'état actuel si un scan était déjà affiché
+            // Config OK: pass to ready state or keep current state if a scan was already displayed
             if (!this._currentSummary.scanInfo && !this._currentSummary.isLoading) {
                 this.updateState({ isReady: true, isConfigMissing: false, noWorkspace: false });
             } else {
-                 // Garder l'état actuel (chargement ou affichage résultat) mais s'assurer que configMissing est faux
-                 this.updateState({ isConfigMissing: false, noWorkspace: false });
+                // Keep the current state (loading or displaying results) but ensure configMissing is false
+                this.updateState({ isConfigMissing: false, noWorkspace: false });
             }
         } else {
-            // Config échouée ou absente (et workspace ouvert)
+            // Failed or missing config (and workspace is open)
             if (!this._currentSummary.noWorkspace) {
-                 this.updateState({ isConfigMissing: true, isReady: false, isLoading: false });
+                this.updateState({ isConfigMissing: true, isReady: false, isLoading: false });
             }
-            // Si noWorkspace est true, il a priorité
+            // If noWorkspace is true, it takes priority
         }
     }
 
@@ -130,13 +130,13 @@ export class SummaryViewProvider implements vscode.WebviewViewProvider, vscode.D
         if (isLoading) {
             this._currentSummary = { isLoading: true, statusMessage: message };
         } else {
-             // Simplified: Stop loading, keep previous state if no error/data yet
-             this._currentSummary = {
-                 ...this._currentSummary, // Keep existing data if any
-                 isLoading: false,
-                 // If no error and no scanInfo/total after loading was stopped, assume ready state again
-                 isReady: !this._currentSummary.error && !this._currentSummary.scanInfo && typeof this._currentSummary.total === 'undefined' && !!vscode.workspace.workspaceFolders?.length
-             };
+            // Simplified: Stop loading, keep previous state if no error/data yet
+            this._currentSummary = {
+                ...this._currentSummary, // Keep existing data if any
+                isLoading: false,
+                // If no error and no scanInfo/total after loading was stopped, assume ready state again
+                isReady: !this._currentSummary.error && !this._currentSummary.scanInfo && typeof this._currentSummary.total === 'undefined' && !!vscode.workspace.workspaceFolders?.length
+            };
         }
         this._updateViewHtml();
     }
@@ -154,33 +154,33 @@ export class SummaryViewProvider implements vscode.WebviewViewProvider, vscode.D
         this._updateViewHtml();
     }
 
-   // Méthode interne générique pour mettre à jour l'état et la vue
-   public updateState(newState: Partial<SummaryData>) {
-    // Fusionner l'état partiel avec l'état actuel
-    this._currentSummary = { ...this._currentSummary, ...newState };
-    // Assurer une cohérence (ex: on ne peut pas être 'ready' et 'loading' en même temps)
-    if (this._currentSummary.isLoading) {
-        this._currentSummary.isReady = false;
-        this._currentSummary.isConfigMissing = false;
-        this._currentSummary.noWorkspace = false;
-        this._currentSummary.error = null;
-    } else if (this._currentSummary.error) {
-         this._currentSummary.isReady = false;
-         this._currentSummary.isLoading = false;
-         this._currentSummary.scanInfo = undefined; // Effacer les résultats en cas d'erreur
-    } else if (this._currentSummary.isReady) {
-         this._currentSummary.isLoading = false;
-         this._currentSummary.isConfigMissing = false;
-         this._currentSummary.noWorkspace = false;
-         this._currentSummary.error = null;
-         // Optionnel: effacer les anciens résultats quand on redevient prêt ?
-         // this._currentSummary.scanInfo = undefined;
-         // this._currentSummary.counts = undefined;
-         // this._currentSummary.total = undefined;
-    } // Ajouter d'autres règles de cohérence si nécessaire
+    // Internal generic method to update the state and view
+    public updateState(newState: Partial<SummaryData>) {
+        // Merge the partial state with the current state
+        this._currentSummary = { ...this._currentSummary, ...newState };
+        // Ensure consistency (ex: cannot be 'ready' and 'loading' at the same time)
+        if (this._currentSummary.isLoading) {
+            this._currentSummary.isReady = false;
+            this._currentSummary.isConfigMissing = false;
+            this._currentSummary.noWorkspace = false;
+            this._currentSummary.error = null;
+        } else if (this._currentSummary.error) {
+            this._currentSummary.isReady = false;
+            this._currentSummary.isLoading = false;
+            this._currentSummary.scanInfo = undefined; // Effacer les résultats en cas d'erreur
+        } else if (this._currentSummary.isReady) {
+            this._currentSummary.isLoading = false;
+            this._currentSummary.isConfigMissing = false;
+            this._currentSummary.noWorkspace = false;
+            this._currentSummary.error = null;
+            // Optionnel: effacer les anciens résultats quand on redevient prêt ?
+            // this._currentSummary.scanInfo = undefined;
+            // this._currentSummary.counts = undefined;
+            // this._currentSummary.total = undefined;
+        } // Ajouter d'autres règles de cohérence si nécessaire
 
-    this._updateViewHtml();
-}
+        this._updateViewHtml();
+    }
 
     private _updateViewHtml(): void {
         if (this._view) {
@@ -190,7 +190,7 @@ export class SummaryViewProvider implements vscode.WebviewViewProvider, vscode.D
 
     /** Generates the HTML content using the imported function. */
     private _getHtml(webview: vscode.Webview): string {
-        // Utilise la fonction importée depuis ../ui/html/summaryHtml.ts
+        // Use the imported function from ../ui/html/summaryHtml.ts
         return getSummaryViewHtml(this._currentSummary, webview, this._extensionUri);
     }
 

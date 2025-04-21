@@ -11,6 +11,3 @@ export function getNonce(): string {
     }
     return text;
 }
-
-// Tu pourras ajouter d'autres fonctions utilitaires ici plus tard
-// export function escapeHtml(unsafe: string): string { ... } // Alternative à lodash si besoin

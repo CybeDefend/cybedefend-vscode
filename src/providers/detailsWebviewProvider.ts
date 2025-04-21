@@ -1,9 +1,9 @@
 // src/providers/detailsWebviewViewProvider.ts
 import * as vscode from 'vscode';
 // MODIFIÉ: Importer depuis le nouveau chemin '/ui/html' (via index.ts)
-import { getDetailsWebviewHtml } from '../ui/html';
-import { GetProjectVulnerabilityByIdResponseDto } from '../dtos/result/response/get-project-vulnerability-by-id-response.dto';
 import { COMMAND_OPEN_FILE_LOCATION } from '../constants/constants';
+import { GetProjectVulnerabilityByIdResponseDto } from '../dtos/result/response/get-project-vulnerability-by-id-response.dto';
+import { getDetailsWebviewHtml } from '../ui/html';
 import { getNonce } from '../utilities/utils'; // Ajuste le chemin si nécessaire
 
 /**
@@ -12,7 +12,7 @@ import { getNonce } from '../utilities/utils'; // Ajuste le chemin si nécessair
  */
 export class DetailsWebviewViewProvider implements vscode.Disposable {
 
-    public static readonly viewType = 'cybedefendScannerDetailView'; // ID de la vue (doit correspondre à package.json)
+    public static readonly viewType = 'cybedefendScannerDetailView';
 
     private _panel?: vscode.WebviewPanel;
     private _currentData?: GetProjectVulnerabilityByIdResponseDto;
@@ -40,10 +40,9 @@ export class DetailsWebviewViewProvider implements vscode.Disposable {
                 enableScripts: true,
                 retainContextWhenHidden: true,
                 localResourceRoots: [
-                    // Autoriser l'accès aux ressources pour les Codicons
-                    vscode.Uri.joinPath(this._extensionUri, 'dist'), // Pour Codicons copiés
-                    vscode.Uri.joinPath(this._extensionUri, 'node_modules'), // Garder pour compatibilité
-                    // Autoriser l'accès aux médias si vous en avez
+                    vscode.Uri.joinPath(this._extensionUri, 'dist'), // For Codicons copied
+                    vscode.Uri.joinPath(this._extensionUri, 'node_modules'), // Keep for compatibility
+                    // Allow access to media if you have any
                     vscode.Uri.joinPath(this._extensionUri, 'media'),
                 ]
             }
@@ -57,18 +56,18 @@ export class DetailsWebviewViewProvider implements vscode.Disposable {
                     if (data.filePath && typeof data.lineNumber === 'number') {
                         vscode.commands.executeCommand(COMMAND_OPEN_FILE_LOCATION, data.filePath, data.lineNumber);
                     } else {
-                         console.warn("Invalid data received for triggerOpenFile:", data);
+                        console.warn("Invalid data received for triggerOpenFile:", data);
                     }
                     return;
             }
         }, null, this._disposables);
 
         this._panel.onDidDispose(() => {
-            // Important : Nettoyer les listeners associés à CE panel
-             this._disposables.forEach(d => d.dispose());
-             this._disposables = []; // Vider le tableau pour la prochaine création
-             this._panel = undefined; // Marquer le panel comme détruit
-        }, null, this.context.subscriptions); // Ajouter la gestion de la fermeture à l'extension principale
+            // Important : Clean up listeners associated with this panel
+            this._disposables.forEach(d => d.dispose());
+            this._disposables = []; // Clear the array for the next creation
+            this._panel = undefined; // Mark the panel as destroyed
+        }, null, this.context.subscriptions); // Add closing handling to the main extension
     }
 
     /**
@@ -84,8 +83,8 @@ export class DetailsWebviewViewProvider implements vscode.Disposable {
         if (this._panel) {
             // Assign the new HTML to the existing webview
             this._panel.webview.html = this._getHtmlForWebview(this._panel.webview);
-             // Optionnel : donner le focus au panel mis à jour
-             this._panel.reveal(this._panel.viewColumn);
+            // Optional: give focus to the updated panel
+            this._panel.reveal(this._panel.viewColumn);
         }
     }
 
@@ -99,9 +98,9 @@ export class DetailsWebviewViewProvider implements vscode.Disposable {
         } else {
             // Default HTML when _currentData is undefined
             const nonce = getNonce();
-             const { codiconsUri, codiconsFontUri } = this.getAssetUris(webview); // Get URIs for default view too
+            const { codiconsUri, codiconsFontUri } = this.getAssetUris(webview); // Get URIs for default view too
 
-             return `<!DOCTYPE html>
+            return `<!DOCTYPE html>
                  <html lang="en">
                  <head>
                      <meta charset="UTF-8">
@@ -126,26 +125,26 @@ export class DetailsWebviewViewProvider implements vscode.Disposable {
         }
     }
 
-     /** Helper to get asset URIs */
-     private getAssetUris(webview: vscode.Webview) {
-         // CORRIGÉ: Utiliser les chemins copiés dans dist
-         const codiconsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'codicon.css'));
-         const codiconsFontUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'codicon.ttf'));
-         // Ajoutez ici d'autres URIs si nécessaire (e.g., pour un CSS personnalisé)
-         return { codiconsUri, codiconsFontUri };
-     }
+    /** Helper to get asset URIs */
+    private getAssetUris(webview: vscode.Webview) {
+        // CORRIGÉ: Utiliser les chemins copiés dans dist
+        const codiconsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'codicon.css'));
+        const codiconsFontUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'codicon.ttf'));
+        // Ajoutez ici d'autres URIs si nécessaire (e.g., pour un CSS personnalisé)
+        return { codiconsUri, codiconsFontUri };
+    }
 
 
-     /**
-      * Cleans up resources when the provider instance is disposed (e.g., during extension deactivation).
-      */
-     public dispose() {
-         // Dispose the panel if it exists (which will trigger its onDidDispose and clean listeners)
-         if (this._panel) {
-             this._panel.dispose();
-         }
-         // Nettoyage explicite des listeners au cas où le panel n'existerait plus mais des listeners seraient restés
-          this._disposables.forEach(d => d.dispose());
-          this._disposables = [];
-     }
+    /**
+     * Cleans up resources when the provider instance is disposed (e.g., during extension deactivation).
+     */
+    public dispose() {
+        // Dispose the panel if it exists (which will trigger its onDidDispose and clean listeners)
+        if (this._panel) {
+            this._panel.dispose();
+        }
+        // Nettoyage explicite des listeners au cas où le panel n'existerait plus mais des listeners seraient restés
+        this._disposables.forEach(d => d.dispose());
+        this._disposables = [];
+    }
 }

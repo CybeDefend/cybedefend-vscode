@@ -1,11 +1,11 @@
 // src/auth/authService.ts
 import * as vscode from 'vscode';
-import { SECRET_API_KEY, WORKSPACE_PROJECT_ID_KEY_PREFIX } from '../constants/constants';
 import { ApiService } from '../api/apiService';
+import { SECRET_API_KEY, WORKSPACE_PROJECT_ID_KEY_PREFIX } from '../constants/constants';
 import { OrganizationInformationsResponseDto } from '../dtos/organization/organization-informations-response.dto';
+import { ProjectAllInformationsResponseDto } from '../dtos/project/paginate-project-all-informations-response.dto';
 import { RepositoryDto } from '../dtos/repository/repository.dto';
 import { TeamInformationsResponseDto } from '../dtos/team/team-informations-response.dto';
-import { ProjectAllInformationsResponseDto } from '../dtos/project/paginate-project-all-informations-response.dto';
 
 export interface ProjectConfig {
     apiKey: string;
@@ -47,13 +47,13 @@ export class AuthService {
     }
 
     public async getCurrentWorkspaceProjectId(): Promise<string | undefined> {
-         const workspaceRoot = this.getCurrentWorkspaceRootPath();
-         if (!workspaceRoot) {
-             return undefined;
-         }
-         const key = WORKSPACE_PROJECT_ID_KEY_PREFIX + workspaceRoot;
-         return this.context.workspaceState.get<string>(key);
-     }
+        const workspaceRoot = this.getCurrentWorkspaceRootPath();
+        if (!workspaceRoot) {
+            return undefined;
+        }
+        const key = WORKSPACE_PROJECT_ID_KEY_PREFIX + workspaceRoot;
+        return this.context.workspaceState.get<string>(key);
+    }
 
     private async setWorkspaceProjectId(workspaceRoot: string, projectId: string): Promise<void> {
         if (!projectId || typeof projectId !== 'string') {
@@ -87,18 +87,18 @@ export class AuthService {
             if (match && match[1]) {
                 const url = match[1].trim();
                 const repoNameMatch = url.match(/[:/]([^/]+\/[^/]+?)(\.git)?$/);
-                 if (repoNameMatch && repoNameMatch[1]) {
-                     const fullName = repoNameMatch[1];
-                     const nameOnly = fullName.split('/').pop();
-                     console.log(`[AuthService] Detected git repo name: ${nameOnly} (from URL: ${url})`);
-                     return nameOnly;
-                 }
+                if (repoNameMatch && repoNameMatch[1]) {
+                    const fullName = repoNameMatch[1];
+                    const nameOnly = fullName.split('/').pop();
+                    console.log(`[AuthService] Detected git repo name: ${nameOnly} (from URL: ${url})`);
+                    return nameOnly;
+                }
             }
-             console.log('[AuthService] Could not find remote origin URL in .git/config');
-             return undefined;
+            console.log('[AuthService] Could not find remote origin URL in .git/config');
+            return undefined;
         } catch (error: any) {
             if (error instanceof vscode.FileSystemError && error.code === 'FileNotFound') {
-                 console.log('[AuthService] .git/config not found.');
+                console.log('[AuthService] .git/config not found.');
             } else {
                 console.error('[AuthService] Error reading or parsing .git/config:', error);
             }
@@ -106,7 +106,7 @@ export class AuthService {
         }
     }
 
-    
+
 
     /**
      * Orchestrates the enhanced configuration flow:
@@ -132,169 +132,169 @@ export class AuthService {
                 return null;
             }
         }
-         console.log('[AuthService] API Key check passed.');
+        console.log('[AuthService] API Key check passed.');
 
         // 2. Get Workspace Root
         const workspaceRoot = this.getCurrentWorkspaceRootPath();
         if (!workspaceRoot) { return null; }
         console.log(`[AuthService] Workspace root: ${workspaceRoot}`);
 
-         // 2.5 Check if ProjectID is already stored
-         const existingProjectId = await this.getCurrentWorkspaceProjectId();
-         if (existingProjectId) {
-             console.log(`[AuthService] Found existing Project ID in workspaceState: ${existingProjectId}`);
-             // Get OrgId if stored ? For now we leave it empty
-             const existingOrgId = this.context.workspaceState.get<string>(`cybedefendWorkspaceOrgId:${workspaceRoot}`) || '';
-             return { apiKey, projectId: existingProjectId, workspaceRoot, organizationId: existingOrgId };
-         }
-         console.log('[AuthService] No existing Project ID found in workspaceState.');
+        // 2.5 Check if ProjectID is already stored
+        const existingProjectId = await this.getCurrentWorkspaceProjectId();
+        if (existingProjectId) {
+            console.log(`[AuthService] Found existing Project ID in workspaceState: ${existingProjectId}`);
+            // Get OrgId if stored ? For now we leave it empty
+            const existingOrgId = this.context.workspaceState.get<string>(`cybedefendWorkspaceOrgId:${workspaceRoot}`) || '';
+            return { apiKey, projectId: existingProjectId, workspaceRoot, organizationId: existingOrgId };
+        }
+        console.log('[AuthService] No existing Project ID found in workspaceState.');
 
         // 3. Select Organization
         let selectedOrganization: OrganizationInformationsResponseDto | undefined;
         try {
-             vscode.window.showInformationMessage('CybeDefend: Retrieving your organizations...');
-             const organizations = await apiServiceInstance.getOrganizations();
-             if (!organizations || organizations.length === 0) {
-                 vscode.window.showErrorMessage('No organizations found for your account.');
-                 return null;
-             }
+            vscode.window.showInformationMessage('CybeDefend: Retrieving your organizations...');
+            const organizations = await apiServiceInstance.getOrganizations();
+            if (!organizations || organizations.length === 0) {
+                vscode.window.showErrorMessage('No organizations found for your account.');
+                return null;
+            }
 
-             if (organizations.length === 1) {
-                 selectedOrganization = organizations[0];
-                 vscode.window.showInformationMessage(`Organization "${selectedOrganization.name}" automatically selected.`);
-             } else {
-                 const quickPickItems = organizations.map(org => ({
-                     label: org.name,
-                     description: org.description || `ID: ${org.id}`,
-                     data: org
-                 } as QuickPickItemWithData<OrganizationInformationsResponseDto>));
+            if (organizations.length === 1) {
+                selectedOrganization = organizations[0];
+                vscode.window.showInformationMessage(`Organization "${selectedOrganization.name}" automatically selected.`);
+            } else {
+                const quickPickItems = organizations.map(org => ({
+                    label: org.name,
+                    description: org.description || `ID: ${org.id}`,
+                    data: org
+                } as QuickPickItemWithData<OrganizationInformationsResponseDto>));
 
-                 const selection = await vscode.window.showQuickPick(quickPickItems, {
-                     title: 'Select an Organization',
-                     placeHolder: 'Choose the organization to use',
-                     ignoreFocusOut: true
-                 });
+                const selection = await vscode.window.showQuickPick(quickPickItems, {
+                    title: 'Select an Organization',
+                    placeHolder: 'Choose the organization to use',
+                    ignoreFocusOut: true
+                });
 
-                 if (selection) {
-                     selectedOrganization = selection.data;
-                 } else {
-                     vscode.window.showWarningMessage('Organization selection cancelled.');
-                     return null; // Cancelled by the user
-                 }
-             }
+                if (selection) {
+                    selectedOrganization = selection.data;
+                } else {
+                    vscode.window.showWarningMessage('Organization selection cancelled.');
+                    return null; // Cancelled by the user
+                }
+            }
         } catch (error: any) {
-             vscode.window.showErrorMessage(`Error retrieving organizations: ${error.message}`);
-             return null;
+            vscode.window.showErrorMessage(`Error retrieving organizations: ${error.message}`);
+            return null;
         }
-         const organizationId = selectedOrganization.id;
-         console.log(`[AuthService] Organization selected: ${organizationId} (${selectedOrganization.name})`);
+        const organizationId = selectedOrganization.id;
+        console.log(`[AuthService] Organization selected: ${organizationId} (${selectedOrganization.name})`);
 
         // --- OPTION A: Git detection ---
-         console.log('[AuthService] Attempting Git repository detection (Option A)...');
-         const detectedRepoName = await this.detectGitRepoName(workspaceRoot);
+        console.log('[AuthService] Attempting Git repository detection (Option A)...');
+        const detectedRepoName = await this.detectGitRepoName(workspaceRoot);
 
         if (detectedRepoName) {
-             vscode.window.showInformationMessage(`CybeDefend: Git repository "${detectedRepoName}" detected`);
-             try {
-                 const repoData = await apiServiceInstance.getRepositories(organizationId);
-                 let matchedRepoDto: RepositoryDto | undefined;
+            vscode.window.showInformationMessage(`CybeDefend: Git repository "${detectedRepoName}" detected`);
+            try {
+                const repoData = await apiServiceInstance.getRepositories(organizationId);
+                let matchedRepoDto: RepositoryDto | undefined;
 
-                 // Iterate to find a match
-                 for (const install of repoData.repositories) {
-                     matchedRepoDto = install.repository.find(repo => repo.name === detectedRepoName || repo.fullName.endsWith(`/${detectedRepoName}`));
-                     if (matchedRepoDto) break; // Stop when a match is found
-                 }
+                // Iterate to find a match
+                for (const install of repoData.repositories) {
+                    matchedRepoDto = install.repository.find(repo => repo.name === detectedRepoName || repo.fullName.endsWith(`/${detectedRepoName}`));
+                    if (matchedRepoDto) { break; } // Stop when a match is found
+                }
 
-                 if (matchedRepoDto) {
-                      console.log(`[AuthService] Found matching repository: ${matchedRepoDto.fullName} (ID: ${matchedRepoDto.id})`);
-                     // --- OPTION A1: Project already linked ---
-                     if (matchedRepoDto.projectId) {
-                         vscode.window.showInformationMessage(`Repository "${matchedRepoDto.name}" linked to existing project.`);
-                         await this.setWorkspaceProjectId(workspaceRoot, matchedRepoDto.projectId);
-                          console.log(`[AuthService] Success: Auto-detected linked project ID: ${matchedRepoDto.projectId}`);
-                         return { apiKey, projectId: matchedRepoDto.projectId, workspaceRoot, organizationId }; // FINAL STEP A1
-                     }
-                     // --- OPTION A2: Project not linked, propose creation/link ---
-                     else {
-                          console.log(`[AuthService] Matched repository ${matchedRepoDto.fullName} has no linked projectID.`);
-                         const choice = await vscode.window.showQuickPick(['Yes', 'No'], {
-                             title: `Link repository "${detectedRepoName}" ?`,
-                             placeHolder: `This repository is not linked to any CybeDefend project. Do you want to create a new project "${detectedRepoName}" and link it ?`,
-                             ignoreFocusOut: true
-                         });
+                if (matchedRepoDto) {
+                    console.log(`[AuthService] Found matching repository: ${matchedRepoDto.fullName} (ID: ${matchedRepoDto.id})`);
+                    // --- OPTION A1: Project already linked ---
+                    if (matchedRepoDto.projectId) {
+                        vscode.window.showInformationMessage(`Repository "${matchedRepoDto.name}" linked to existing project.`);
+                        await this.setWorkspaceProjectId(workspaceRoot, matchedRepoDto.projectId);
+                        console.log(`[AuthService] Success: Auto-detected linked project ID: ${matchedRepoDto.projectId}`);
+                        return { apiKey, projectId: matchedRepoDto.projectId, workspaceRoot, organizationId }; // FINAL STEP A1
+                    }
+                    // --- OPTION A2: Project not linked, propose creation/link ---
+                    else {
+                        console.log(`[AuthService] Matched repository ${matchedRepoDto.fullName} has no linked projectID.`);
+                        const choice = await vscode.window.showQuickPick(['Yes', 'No'], {
+                            title: `Link repository "${detectedRepoName}" ?`,
+                            placeHolder: `This repository is not linked to any CybeDefend project. Do you want to create a new project "${detectedRepoName}" and link it ?`,
+                            ignoreFocusOut: true
+                        });
 
-                         if (choice === 'Yes') {
-                             vscode.window.showInformationMessage('CybeDefend: Creating and linking project...');
-                              console.log('[AuthService] User chose to create and link project.');
-                             // 1. Select team
-                             let selectedTeam: TeamInformationsResponseDto | undefined;
-                             try {
-                                 const teams = await apiServiceInstance.getTeams(organizationId);
-                                 if (!teams || teams.length === 0) throw new Error("No teams found in the organization.");
-                                 if (teams.length === 1) {
-                                     selectedTeam = teams[0];
-                                 } else {
-                                     const teamItems = teams.map(t => ({ label: t.name, description: t.description, data: t } as QuickPickItemWithData<TeamInformationsResponseDto>));
-                                     const teamSelection = await vscode.window.showQuickPick(teamItems, { title: 'Select a Team', placeHolder: 'Choose the team for the new project', ignoreFocusOut: true });
-                                     if (!teamSelection) throw new Error("Team selection cancelled.");
-                                     selectedTeam = teamSelection.data;
-                                 }
-                                  console.log(`[AuthService] Team selected for new project: ${selectedTeam.id} (${selectedTeam.name})`);
-                             } catch (teamError: any) {
-                                 vscode.window.showErrorMessage(`Error retrieving/selecting teams: ${teamError.message}`);
-                                 // Redirect to OPTION B in case of error here
-                                 return await this.fallbackToListProjects(apiKey, organizationId, workspaceRoot, apiServiceInstance);
-                             }
+                        if (choice === 'Yes') {
+                            vscode.window.showInformationMessage('CybeDefend: Creating and linking project...');
+                            console.log('[AuthService] User chose to create and link project.');
+                            // 1. Select team
+                            let selectedTeam: TeamInformationsResponseDto | undefined;
+                            try {
+                                const teams = await apiServiceInstance.getTeams(organizationId);
+                                if (!teams || teams.length === 0) { throw new Error("No teams found in the organization."); }
+                                if (teams.length === 1) {
+                                    selectedTeam = teams[0];
+                                } else {
+                                    const teamItems = teams.map(t => ({ label: t.name, description: t.description, data: t } as QuickPickItemWithData<TeamInformationsResponseDto>));
+                                    const teamSelection = await vscode.window.showQuickPick(teamItems, { title: 'Select a Team', placeHolder: 'Choose the team for the new project', ignoreFocusOut: true });
+                                    if (!teamSelection) { throw new Error("Team selection cancelled."); }
+                                    selectedTeam = teamSelection.data;
+                                }
+                                console.log(`[AuthService] Team selected for new project: ${selectedTeam.id} (${selectedTeam.name})`);
+                            } catch (teamError: any) {
+                                vscode.window.showErrorMessage(`Error retrieving/selecting teams: ${teamError.message}`);
+                                // Redirect to OPTION B in case of error here
+                                return await this.fallbackToListProjects(apiKey, organizationId, workspaceRoot, apiServiceInstance);
+                            }
 
-                             // 2. Create project
-                             let createdProjectId: string;
-                             try {
-                                 const newProject = await apiServiceInstance.createProject(selectedTeam.id, detectedRepoName); // Use the detected name
-                                 createdProjectId = newProject.projectId;
-                                 vscode.window.showInformationMessage(`Project "${newProject.name}" created successfully.`);
-                                  console.log(`[AuthService] Project created successfully: ${createdProjectId}`);
-                             } catch (createError: any) {
-                                 vscode.window.showErrorMessage(`Error creating project: ${createError.message}`);
-                                 // Redirect to OPTION B
-                                 return await this.fallbackToListProjects(apiKey, organizationId, workspaceRoot, apiServiceInstance);
-                             }
+                            // 2. Create project
+                            let createdProjectId: string;
+                            try {
+                                const newProject = await apiServiceInstance.createProject(selectedTeam.id, detectedRepoName); // Use the detected name
+                                createdProjectId = newProject.projectId;
+                                vscode.window.showInformationMessage(`Project "${newProject.name}" created successfully.`);
+                                console.log(`[AuthService] Project created successfully: ${createdProjectId}`);
+                            } catch (createError: any) {
+                                vscode.window.showErrorMessage(`Error creating project: ${createError.message}`);
+                                // Redirect to OPTION B
+                                return await this.fallbackToListProjects(apiKey, organizationId, workspaceRoot, apiServiceInstance);
+                            }
 
-                             // 3. Link project to repository
-                             try {
-                                 await apiServiceInstance.linkProject(organizationId, createdProjectId, matchedRepoDto.id); // Use the internal repo ID DTO
-                                 vscode.window.showInformationMessage(`Project linked to repository "${matchedRepoDto.fullName}" successfully.`);
-                                  console.log(`[AuthService] Project ${createdProjectId} linked successfully to repository ${matchedRepoDto.id}`);
-                             } catch (linkError: any) {
-                                 // Do not block if the link fails, but inform the user
-                                 vscode.window.showWarningMessage(`Error linking project to repository: ${linkError.message}. The project was created but not linked.`);
-                                  console.error(`[AuthService] Failed to link project ${createdProjectId} to repository ${matchedRepoDto.id}`, linkError);
-                             }
+                            // 3. Link project to repository
+                            try {
+                                await apiServiceInstance.linkProject(organizationId, createdProjectId, matchedRepoDto.id); // Use the internal repo ID DTO
+                                vscode.window.showInformationMessage(`Project linked to repository "${matchedRepoDto.fullName}" successfully.`);
+                                console.log(`[AuthService] Project ${createdProjectId} linked successfully to repository ${matchedRepoDto.id}`);
+                            } catch (linkError: any) {
+                                // Do not block if the link fails, but inform the user
+                                vscode.window.showWarningMessage(`Error linking project to repository: ${linkError.message}. The project was created but not linked.`);
+                                console.error(`[AuthService] Failed to link project ${createdProjectId} to repository ${matchedRepoDto.id}`, linkError);
+                            }
 
-                             // 4. Store and return
-                             await this.setWorkspaceProjectId(workspaceRoot, createdProjectId);
-                             console.log(`[AuthService] Success: Created and potentially linked project ID: ${createdProjectId}`);
-                             return { apiKey, projectId: createdProjectId, workspaceRoot, organizationId }; // FINAL STEP A2
-                         } else {
-                              console.log('[AuthService] User chose not to create/link project. Proceeding to Option B.');
-                             // User chose 'No' or cancelled -> Proceed to OPTION B
-                             return await this.fallbackToListProjects(apiKey, organizationId, workspaceRoot, apiServiceInstance);
-                         }
-                     }
-                 } else {
-                      console.log(`[AuthService] No matching repository found for "${detectedRepoName}" in organization ${organizationId}. Proceeding to Option B.`);
-                      vscode.window.showInformationMessage(`No matching repository found in your organization. Please select an existing project.`);
-                     // No match -> Proceed to OPTION B
-                     return await this.fallbackToListProjects(apiKey, organizationId, workspaceRoot, apiServiceInstance);
-                 }
-             } catch (error: any) {
-                 vscode.window.showWarningMessage(`Error retrieving repositories: ${error.message}. Proceeding to manual project selection.`);
-                 // Error API GetRepositories -> Proceed to OPTION B
-                 return await this.fallbackToListProjects(apiKey, organizationId, workspaceRoot, apiServiceInstance);
-             }
+                            // 4. Store and return
+                            await this.setWorkspaceProjectId(workspaceRoot, createdProjectId);
+                            console.log(`[AuthService] Success: Created and potentially linked project ID: ${createdProjectId}`);
+                            return { apiKey, projectId: createdProjectId, workspaceRoot, organizationId }; // FINAL STEP A2
+                        } else {
+                            console.log('[AuthService] User chose not to create/link project. Proceeding to Option B.');
+                            // User chose 'No' or cancelled -> Proceed to OPTION B
+                            return await this.fallbackToListProjects(apiKey, organizationId, workspaceRoot, apiServiceInstance);
+                        }
+                    }
+                } else {
+                    console.log(`[AuthService] No matching repository found for "${detectedRepoName}" in organization ${organizationId}. Proceeding to Option B.`);
+                    vscode.window.showInformationMessage(`No matching repository found in your organization. Please select an existing project.`);
+                    // No match -> Proceed to OPTION B
+                    return await this.fallbackToListProjects(apiKey, organizationId, workspaceRoot, apiServiceInstance);
+                }
+            } catch (error: any) {
+                vscode.window.showWarningMessage(`Error retrieving repositories: ${error.message}. Proceeding to manual project selection.`);
+                // Error API GetRepositories -> Proceed to OPTION B
+                return await this.fallbackToListProjects(apiKey, organizationId, workspaceRoot, apiServiceInstance);
+            }
         } else {
-             console.log('[AuthService] Git repository name not detected. Proceeding to Option B.');
-             // No .git detected -> Proceed to OPTION B
-             return await this.fallbackToListProjects(apiKey, organizationId, workspaceRoot, apiServiceInstance);
+            console.log('[AuthService] Git repository name not detected. Proceeding to Option B.');
+            // No .git detected -> Proceed to OPTION B
+            return await this.fallbackToListProjects(apiKey, organizationId, workspaceRoot, apiServiceInstance);
         }
     }
 
@@ -303,70 +303,70 @@ export class AuthService {
      * If selection fails or no projects exist, falls back to manual input.
      */
     private async fallbackToListProjects(apiKey: string, organizationId: string, workspaceRoot: string, apiServiceInstance: ApiService): Promise<ProjectConfig | null> {
-         console.log('[AuthService] Entering Option B: Listing projects...');
-         vscode.window.showInformationMessage(`CybeDefend: Searching for projects in the organization...`);
-         try {
-             // Get the first page (up to 100 projects)
-             const projectData = await apiServiceInstance.getProjectsOrganization(organizationId, 100);
+        console.log('[AuthService] Entering Option B: Listing projects...');
+        vscode.window.showInformationMessage(`CybeDefend: Searching for projects in the organization...`);
+        try {
+            // Get the first page (up to 100 projects)
+            const projectData = await apiServiceInstance.getProjectsOrganization(organizationId, 100);
 
-             if (!projectData || projectData.projects.length === 0) {
-                 vscode.window.showWarningMessage('No projects found in this organization. Please enter the project ID manually.');
-                 return await this.fallbackToManualInput(apiKey, workspaceRoot, organizationId); // Proceed to manual input
-             }
+            if (!projectData || projectData.projects.length === 0) {
+                vscode.window.showWarningMessage('No projects found in this organization. Please enter the project ID manually.');
+                return await this.fallbackToManualInput(apiKey, workspaceRoot, organizationId); // Proceed to manual input
+            }
 
-             const projectItems = projectData.projects.map(p => ({
-                 label: p.name,
-                 description: `Team: ${p.teamName} | ID: ${p.projectId}`,
-                 data: p
-             } as QuickPickItemWithData<ProjectAllInformationsResponseDto>));
+            const projectItems = projectData.projects.map(p => ({
+                label: p.name,
+                description: `Team: ${p.teamName} | ID: ${p.projectId}`,
+                data: p
+            } as QuickPickItemWithData<ProjectAllInformationsResponseDto>));
 
-             const selection = await vscode.window.showQuickPick(projectItems, {
-                 title: 'Select an Existing Project',
-                 placeHolder: 'Choose the CybeDefend project for this workspace',
-                 ignoreFocusOut: true,
-                 matchOnDescription: true // Allows searching by ID also
-             });
+            const selection = await vscode.window.showQuickPick(projectItems, {
+                title: 'Select an Existing Project',
+                placeHolder: 'Choose the CybeDefend project for this workspace',
+                ignoreFocusOut: true,
+                matchOnDescription: true // Allows searching by ID also
+            });
 
-             if (selection) {
-                 const selectedProjectId = selection.data.projectId;
-                 await this.setWorkspaceProjectId(workspaceRoot, selectedProjectId);
-                 vscode.window.showInformationMessage(`Project "${selection.data.name}" selected.`);
-                 console.log(`[AuthService] Success: User selected project ID: ${selectedProjectId}`);
-                 return { apiKey, projectId: selectedProjectId, workspaceRoot, organizationId }; // FINAL STEP B
-             } else {
-                 vscode.window.showWarningMessage('Project selection cancelled.');
-                 return null; // Cancelled by the user
-             }
+            if (selection) {
+                const selectedProjectId = selection.data.projectId;
+                await this.setWorkspaceProjectId(workspaceRoot, selectedProjectId);
+                vscode.window.showInformationMessage(`Project "${selection.data.name}" selected.`);
+                console.log(`[AuthService] Success: User selected project ID: ${selectedProjectId}`);
+                return { apiKey, projectId: selectedProjectId, workspaceRoot, organizationId }; // FINAL STEP B
+            } else {
+                vscode.window.showWarningMessage('Project selection cancelled.');
+                return null; // Cancelled by the user
+            }
 
-         } catch (error: any) {
-             vscode.window.showErrorMessage(`Error retrieving projects: ${error.message}. Proceeding to manual input.`);
-             // Error API GetProjects -> Proceed to manual input
-             return await this.fallbackToManualInput(apiKey, workspaceRoot, organizationId);
-         }
+        } catch (error: any) {
+            vscode.window.showErrorMessage(`Error retrieving projects: ${error.message}. Proceeding to manual input.`);
+            // Error API GetProjects -> Proceed to manual input
+            return await this.fallbackToManualInput(apiKey, workspaceRoot, organizationId);
+        }
     }
 
     /**
      * Final fallback: Prompts the user to enter the Project ID manually.
      */
-     private async fallbackToManualInput(apiKey: string, workspaceRoot: string, organizationId: string): Promise<ProjectConfig | null> {
-         console.log('[AuthService] Entering final fallback: Manual Project ID input...');
-         const projectId = await this.promptForProjectId(); // Use the existing prompt method
+    private async fallbackToManualInput(apiKey: string, workspaceRoot: string, organizationId: string): Promise<ProjectConfig | null> {
+        console.log('[AuthService] Entering final fallback: Manual Project ID input...');
+        const projectId = await this.promptForProjectId(); // Use the existing prompt method
 
-         if (projectId) {
-             try {
-                 await this.setWorkspaceProjectId(workspaceRoot, projectId);
-                 vscode.window.showInformationMessage(`ID de projet "${projectId}" enregistré manuellement.`);
-                  console.log(`[AuthService] Success: User manually entered project ID: ${projectId}`);
-                 return { apiKey, projectId, workspaceRoot, organizationId }; // FINAL STEP (Manual)
-             } catch (error: any) {
-                 vscode.window.showErrorMessage(`Error saving manual project ID: ${error.message}`);
-                 return null;
-             }
-         } else {
-             vscode.window.showErrorMessage('Project ID not provided. Configuration incomplete.');
-             return null; // Cancelled by the user
-         }
-     }
+        if (projectId) {
+            try {
+                await this.setWorkspaceProjectId(workspaceRoot, projectId);
+                vscode.window.showInformationMessage(`ID de projet "${projectId}" enregistré manuellement.`);
+                console.log(`[AuthService] Success: User manually entered project ID: ${projectId}`);
+                return { apiKey, projectId, workspaceRoot, organizationId }; // FINAL STEP (Manual)
+            } catch (error: any) {
+                vscode.window.showErrorMessage(`Error saving manual project ID: ${error.message}`);
+                return null;
+            }
+        } else {
+            vscode.window.showErrorMessage('Project ID not provided. Configuration incomplete.');
+            return null; // Cancelled by the user
+        }
+    }
 
     // --- Existing methods (promptForProjectId, updateWorkspaceProjectId, ensureApiKeyIsSet) ---
     // promptForProjectId is used in the manual fallback
@@ -384,7 +384,7 @@ export class AuthService {
         // This method can remain for manual update via the dedicated command
         const workspaceRoot = this.getCurrentWorkspaceRootPath();
         if (!workspaceRoot) {
-             vscode.window.showWarningMessage('CybeDefend: Please open a folder to update its project ID.');
+            vscode.window.showWarningMessage('CybeDefend: Please open a folder to update its project ID.');
             return;
         }
         const currentProjectId = await this.getCurrentWorkspaceProjectId();
@@ -395,28 +395,28 @@ export class AuthService {
             title: 'Update Project ID',
             value: currentProjectId || '', // Pre-fill with the current ID if available
             prompt: `Enter the new project ID for "${vscode.workspace.name || 'current workspace'}". Leave empty to cancel.`,
-             validateInput: value => {
-                 return value && value.trim().length === 0 ? 'The project ID cannot be empty or contain only spaces.' : null;
-             }
+            validateInput: value => {
+                return value && value.trim().length === 0 ? 'The project ID cannot be empty or contain only spaces.' : null;
+            }
         });
 
         if (newProjectId === undefined || newProjectId.trim() === '') {
-             vscode.window.showInformationMessage('Project ID update cancelled.');
-             return;
+            vscode.window.showInformationMessage('Project ID update cancelled.');
+            return;
         }
 
         try {
             await this.setWorkspaceProjectId(workspaceRoot, newProjectId.trim());
             vscode.window.showInformationMessage('Workspace project ID updated successfully.');
         } catch (error: any) {
-             console.error("[AuthService] Failed to update Project ID via command:", error);
-             vscode.window.showErrorMessage(`Failed to save project ID: ${error.message}`);
+            console.error("[AuthService] Failed to update Project ID via command:", error);
+            vscode.window.showErrorMessage(`Failed to save project ID: ${error.message}`);
         }
     }
 
     // ensureApiKeyIsSet can be simplified or removed if only ensureProjectConfigurationIsSet is called
     async ensureApiKeyIsSet(): Promise<boolean> {
-         const apiKey = await this.getApiKey();
-         return !!apiKey; // Return simply if the key exists or not
-     }
+        const apiKey = await this.getApiKey();
+        return !!apiKey; // Return simply if the key exists or not
+    }
 }

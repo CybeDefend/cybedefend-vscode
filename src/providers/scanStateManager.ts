@@ -1,7 +1,7 @@
 // src/providers/scanStateManager.ts
 import * as vscode from 'vscode';
-import { GetProjectVulnerabilitiesResponseDto, ScanProjectInfoDto, CountVulnerabilitiesCountByType } from '../dtos/result/response/get-project-vulnerabilities-response.dto'; // Adjust path if needed
 import { DetailedVulnerability } from '../dtos/result/details'; // Adjust path if needed
+import { CountVulnerabilitiesCountByType, GetProjectVulnerabilitiesResponseDto, ScanProjectInfoDto } from '../dtos/result/response/get-project-vulnerabilities-response.dto'; // Adjust path if needed
 
 /**
  * Manages and notifies about the state of the last scan results.
@@ -32,12 +32,12 @@ export class ScanStateManager {
         return this._lastScanResponse;
     }
 
-     /** Gets the Scan info from the last scan */
+    /** Gets the Scan info from the last scan */
     public get scanInfo(): ScanProjectInfoDto | undefined {
         return this._lastScanResponse?.scanProjectInfo;
     }
 
-     /** Gets the counts by type from the last scan */
+    /** Gets the counts by type from the last scan */
     public get vulnCounts(): CountVulnerabilitiesCountByType | undefined {
         return this._lastScanResponse?.vulnCountByType;
     }

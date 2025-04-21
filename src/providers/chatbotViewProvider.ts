@@ -1,18 +1,19 @@
 // /Users/julienzammit/Documents/GitHub/extensions/cybedefend-vscode/src/providers/chatbotViewProvider.ts
-import * as vscode from 'vscode';
-import path from 'path';
 import { createEventSource, EventSourceClient } from 'eventsource-client'; // Use EventSourceClient type if available, else ReturnType
-import { ApiService, InitiateConversationResponse } from '../api/apiService';
+import path from 'path';
+import * as vscode from 'vscode';
+import { ApiService } from '../api/apiService';
+import type { ProjectConfig } from '../auth/authService';
+import { COMMAND_OPEN_FILE_LOCATION } from '../constants/constants';
+import { AddMessageConversationRequestDto } from '../dtos/ai/request/add-message-conversation-request.dto';
+import { StartConversationRequestDto } from '../dtos/ai/request/start-conversation-request.dto';
 import { MessageDto } from '../dtos/ai/response/message.dto';
 import { DetailedVulnerability } from '../dtos/result/details';
+import { getChatbotHtml, ProviderState as HtmlProviderState, VulnerabilityInfoForWebview } from '../ui/html/chatbotHtml'; // Import ProviderState type used by HTML generator
 import { getApiBaseUrl } from '../utilities/config'; // Removed getProjectId import
-import { StartConversationRequestDto } from '../dtos/ai/request/start-conversation-request.dto';
-import { AddMessageConversationRequestDto } from '../dtos/ai/request/add-message-conversation-request.dto';
-import { getChatbotHtml, VulnerabilityInfoForWebview, ProviderState as HtmlProviderState } from '../ui/html/chatbotHtml'; // Import ProviderState type used by HTML generator
-import type { ProjectConfig } from '../auth/authService';
 
 // --- Interfaces ---
-interface WebviewCommand { command: string; text?: string; vulnerability?: DetailedVulnerability | null; }
+interface WebviewCommand { command: string; text?: string; vulnerability?: DetailedVulnerability | null; vulnerabilityId?: string | null; }
 interface ProviderCommand { command: string; state: StateForWebview; }
 
 // Internal state, matches structure expected by getChatbotHtml's ProviderState
@@ -53,6 +54,7 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
     private _disposables: vscode.Disposable[] = [];
     private _apiService: ApiService;
     private _eventSourceInstance: EventSourceClientInstance | null = null;
+    private _workspaceRoot: string | null = null;
 
     /** Complete internal state of the Provider */
     private _state: InternalProviderState = {
@@ -119,18 +121,58 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
                 if (message.text) { await this._handleSendMessage(message.text); }
                 else { console.warn("sendMessage command without text."); }
                 return;
-            case 'loadInitialData': // Triggered by webview JS if needed
-                this.refreshVulnerabilities(); // Use refresh which includes checks
+            case 'loadInitialData':
+                this.refreshVulnerabilities();
                 return;
-            case 'getInitialState': // Request from webview JS for current state
+            case 'getInitialState':
                 this._notifyWebviewState();
                 return;
             case 'setSelectedVulnerability':
                 // Find the full vuln data based on the ID received (message.vulnerability might only have ID)
-                 const receivedVulnId = message.vulnerability?.id;
-                 this._state.selectedVulnerability = this._state.vulnerabilities.find(v => v.id === receivedVulnId) || null;
-                 console.log(`[ChatbotViewProvider] Vulnerability selection changed to: ${this._state.selectedVulnerability?.id || 'None'}`);
-                 this._notifyWebviewState(); // Notify webview of the change
+                const receivedVulnId = message.vulnerability?.id;
+                this._state.selectedVulnerability = this._state.vulnerabilities.find(v => v.id === receivedVulnId) || null;
+                console.log(`[ChatbotViewProvider] Vulnerability selection changed to: ${this._state.selectedVulnerability?.id || 'None'}`);
+                this._notifyWebviewState(); // Notify webview of the change
+                return;
+            case 'vulnerabilitySelected':
+                console.log(`[ChatbotViewProvider] Received 'vulnerabilitySelected' command for ID: ${message.vulnerabilityId || message.vulnerability?.id}`);
+                const vulnerabilityId = message.vulnerabilityId || message.vulnerability?.id;
+                if (vulnerabilityId && this._workspaceRoot) {
+                    const selectedVuln = this._state.vulnerabilities.find(v => v.id === vulnerabilityId);
+
+                    if (selectedVuln) {
+                        this._state.selectedVulnerability = selectedVuln;
+                        this._notifyWebviewState();
+
+                        let relativeFilePath: string | undefined | null = null;
+                        let lineNumber = 1;
+
+                        const vulnType = selectedVuln.vulnerability?.vulnerabilityType;
+
+                        if (vulnType === 'sast' || vulnType === 'iac') {
+                            relativeFilePath = (selectedVuln as any).path;
+                            lineNumber = (selectedVuln as any).vulnerableStartLine ?? 1;
+                        } else if (vulnType === 'sca') {
+                            relativeFilePath = (selectedVuln as any).scaDetectedPackage?.fileName;
+                            lineNumber = 1;
+                        }
+
+                        if (relativeFilePath) {
+                            const lineToShow = Math.max(1, lineNumber);
+                            console.log(`[ChatbotViewProvider] Opening file for selected vulnerability. Root: ${this._workspaceRoot}, Relative: ${relativeFilePath}, Line: ${lineToShow}`);
+                            vscode.commands.executeCommand(COMMAND_OPEN_FILE_LOCATION, this._workspaceRoot, relativeFilePath, lineToShow);
+                        } else {
+                            console.warn(`[ChatbotViewProvider] Could not determine file path for selected vulnerability ID: ${vulnerabilityId}`, selectedVuln);
+                        }
+                    } else {
+                        console.warn(`[ChatbotViewProvider] Could not find vulnerability details in state for ID: ${vulnerabilityId}`);
+                    }
+                } else if (!this._workspaceRoot) {
+                    console.error(`[ChatbotViewProvider] Cannot open file: Workspace root is not set.`);
+                    vscode.window.showErrorMessage("Cannot open file: Workspace root configuration is missing.");
+                } else {
+                    console.warn(`[ChatbotViewProvider] 'vulnerabilitySelected' command received without vulnerabilityId.`);
+                }
                 return;
             case 'resetConversation':
                 this.resetConversationState();
@@ -178,8 +220,8 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
 
             // Start SSE stream if POST successful
             if (conversationIdToStream) {
-                this._state.isLoading = false; // Loading (POST) finished, now streaming starts
-                this._notifyWebviewState();
+                // Ne pas mettre isLoading à false ici pour maintenir la continuité de l'état de chargement
+                // isLoading sera mis à false quand isStreaming deviendra true (dans _startSseStreamWithClientLib)
                 this._startSseStreamWithClientLib(conversationIdToStream); // Non-blocking call
             } else {
                 throw new Error("Failed to obtain a valid conversation ID from the API.");
@@ -199,10 +241,10 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
      */
     private async _startSseStreamWithClientLib(conversationId: string): Promise<void> {
         // Pre-conditions
-        if (!this._state.projectId) { /* ... error handling ... */ return; }
+        if (!this._state.projectId) { return; }
         this.disposeSSEConnection();
         const apiKey = await this._apiService.getApiKey();
-        if (!apiKey) { /* ... error handling ... */ return; }
+        if (!apiKey) { return; }
 
         const baseUrl = getApiBaseUrl();
         const sseUrl = `${baseUrl}/project/${this._state.projectId}/ai/conversation/${conversationId}/stream`;
@@ -225,102 +267,109 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
             // No immediate state change needed here, wait for 'delta'
 
             for await (const event of es) {
-                 try {
+                try {
                     if (typeof event.data !== 'string' || !event.data) { continue; }
                     const parsedData: SsePayload = JSON.parse(event.data);
 
                     switch (parsedData.type) {
                         case 'delta':
-                            if (!this._state.isStreaming) { this._state.isStreaming = true; } // Mark as streaming now
+                            if (!this._state.isStreaming) {
+                                this._state.isStreaming = true;
+                                // Now that isStreaming is true, we can disable isLoading
+                                this._state.isLoading = false;
+                            }
                             this._state.assistantStreamContent += parsedData.payload;
                             this._notifyWebviewState();
                             break;
                         case 'error':
-                            /* ... error handling, set _streamEndedIntentionally=true ... */
-                             const errPayload = parsedData.payload as SseErrorPayload;
-                             const errMsg = errPayload.message || "Unknown stream error";
-                             console.error(`SSE Error Payload: ${errPayload.code} - ${errMsg}`);
-                             if (errPayload.code === 403 && errMsg.toLowerCase().includes('limit reached')) { this._state.limitReachedError = errMsg; }
-                             else { this._state.error = `Streaming Error (${errPayload.code || 'SSE'}): ${errMsg}`; }
-                             this._state.isStreaming = false;
-                             _streamEndedIntentionally = true;
-                             this._notifyWebviewState();
-                             this._eventSourceInstance?.close(); // Close connection on error
-                             return; // Exit the loop and function
+                            const errPayload = parsedData.payload as SseErrorPayload;
+                            const errMsg = errPayload.message || "Unknown stream error";
+                            console.error(`SSE Error Payload: ${errPayload.code} - ${errMsg}`);
+                            if (errPayload.code === 403 && errMsg.toLowerCase().includes('limit reached')) { this._state.limitReachedError = errMsg; }
+                            else { this._state.error = `Streaming Error (${errPayload.code || 'SSE'}): ${errMsg}`; }
+                            this._state.isStreaming = false;
+                            this._state.isLoading = false; // Ensure isLoading is also disabled in case of error
+                            _streamEndedIntentionally = true;
+                            this._notifyWebviewState();
+                            this._eventSourceInstance?.close(); // Close connection on error
+                            return; // Exit the loop and function
                         case 'done':
-                             console.log("[ChatbotViewProvider] SSE 'done' event received.");
-                             _streamEndedIntentionally = true; // Mark intentional end
-                             this._eventSourceInstance?.close(); // Ensure connection is closed *before* state update
-                             this._eventSourceInstance = null;
-                             // Final state update happens in 'finally' block
-                             return; // Exit the loop
+                            console.log("[ChatbotViewProvider] SSE 'done' event received.");
+                            _streamEndedIntentionally = true; // Mark intentional end
+                            this._eventSourceInstance?.close(); // Ensure connection is closed *before* state update
+                            this._eventSourceInstance = null;
+                            // Final state update happens in 'finally' block
+                            return; // Exit the loop
                         case 'history':
-                             if (Array.isArray(parsedData.payload) && this._state.messages.length <= 1) {
-                                 console.log("[ChatbotViewProvider] Received history, updating messages.");
-                                 // Ensure dates are Date objects if needed
-                                 this._state.messages = parsedData.payload.map(m => ({...m, createdAt: new Date(m.createdAt)}));
-                                 this._notifyWebviewState();
-                             }
-                             break;
+                            if (Array.isArray(parsedData.payload) && this._state.messages.length <= 1) {
+                                console.log("[ChatbotViewProvider] Received history, updating messages.");
+                                // Ensure dates are Date objects if needed
+                                this._state.messages = parsedData.payload.map(m => ({ ...m, createdAt: new Date(m.createdAt) }));
+                                this._notifyWebviewState();
+                            }
+                            break;
                         case 'info':
-                             console.log("[ChatbotViewProvider] SSE Info:", parsedData.payload);
-                             break;
+                            console.log("[ChatbotViewProvider] SSE Info:", parsedData.payload);
+                            break;
                         default:
-                             console.warn("[ChatbotViewProvider] Unknown SSE message type:", parsedData.type);
-                             break;
+                            console.warn("[ChatbotViewProvider] Unknown SSE message type:", parsedData.type);
+                            break;
                     }
-                 } catch (parseError) {
-                      console.error("[ChatbotViewProvider] Error parsing SSE message:", parseError, "Data:", event.data);
-                      this._state.error = "Failed to parse message from AI stream.";
-                      this._state.isStreaming = false;
-                      _streamEndedIntentionally = true; // Treat parse error as stream end
-                      this._eventSourceInstance?.close();
-                      this._notifyWebviewState();
-                      return; // Exit the loop
-                 }
+                } catch (parseError) {
+                    console.error("[ChatbotViewProvider] Error parsing SSE message:", parseError, "Data:", event.data);
+                    this._state.error = "Failed to parse message from AI stream.";
+                    this._state.isStreaming = false;
+                    this._state.isLoading = false; // Ensure isLoading is also disabled in case of parsing error
+                    _streamEndedIntentionally = true; // Treat parse error as stream end
+                    this._eventSourceInstance?.close();
+                    this._notifyWebviewState();
+                    return; // Exit the loop
+                }
             }
             // Loop finished without explicit 'done' or 'error' (might indicate unexpected close)
             console.warn("[ChatbotViewProvider] SSE stream loop finished unexpectedly.");
-             _streamEndedIntentionally = _streamEndedIntentionally || false; // If loop finishes, it wasn't 'done' or 'error' event path
+            _streamEndedIntentionally = _streamEndedIntentionally || false; // If loop finishes, it wasn't 'done' or 'error' event path
 
         } catch (connectionError: any) {
-             console.error("[ChatbotViewProvider] SSE Connection Error:", connectionError);
-             let errorMessage = "Chat connection failed.";
-             if (connectionError instanceof Error) { errorMessage = connectionError.message; }
-             if (errorMessage.includes("401")) { errorMessage = "Authentication failed (401). Check API Key."; }
-             if (!_streamEndedIntentionally && !this._state.limitReachedError) { // Only set error if not ended by 'done'/'error'/'limit'
-                 this._state.error = errorMessage;
-             }
+            console.error("[ChatbotViewProvider] SSE Connection Error:", connectionError);
+            let errorMessage = "Chat connection failed.";
+            if (connectionError instanceof Error) { errorMessage = connectionError.message; }
+            if (errorMessage.includes("401")) { errorMessage = "Authentication failed (401). Check API Key."; }
+            if (!_streamEndedIntentionally && !this._state.limitReachedError) { // Only set error if not ended by 'done'/'error'/'limit'
+                this._state.error = errorMessage;
+            }
+            this._state.isLoading = false; // Ensure isLoading is also disabled in case of connection error
         } finally {
-             console.log("[ChatbotViewProvider] SSE stream 'finally' block executing.");
-             // Add the complete streamed message if it exists and no critical error occurred
-             if (this._state.assistantStreamContent.trim() && !this._state.error && !this._state.limitReachedError) {
+            console.log("[ChatbotViewProvider] SSE stream 'finally' block executing.");
+            // Add the complete streamed message if it exists and no critical error occurred
+            if (this._state.assistantStreamContent.trim() && !this._state.error && !this._state.limitReachedError) {
                 const finalMsg = new MessageDto('assistant', this._state.assistantStreamContent.trim(), new Date());
                 const lastMsg = this._state.messages[this._state.messages.length - 1];
                 // Avoid duplicating the message if already added somehow
                 if (!(lastMsg?.role === 'assistant' && lastMsg.content === finalMsg.content)) {
-                     this._state.messages.push(finalMsg);
-                     console.log("[ChatbotViewProvider] Final assistant message added.");
+                    this._state.messages.push(finalMsg);
+                    console.log("[ChatbotViewProvider] Final assistant message added.");
                 }
-             }
+            }
 
-             // Ensure connection is closed and state is reset
-             if (this._eventSourceInstance) {
+            // Ensure connection is closed and state is reset
+            if (this._eventSourceInstance) {
                 this._eventSourceInstance.close();
                 this._eventSourceInstance = null;
-             }
-             this._state.isStreaming = false; // Crucial: ensure streaming is marked as false
-             this._state.assistantStreamContent = ""; // Clear buffer
+            }
+            this._state.isStreaming = false; // Crucial: ensure streaming is marked as false
+            this._state.isLoading = false; // Ensure isLoading is also disabled at the end
+            this._state.assistantStreamContent = ""; // Clear buffer
 
-             this._notifyWebviewState(); // Notify final state
-             console.log("[ChatbotViewProvider] SSE stream processing finished.");
+            this._notifyWebviewState(); // Notify final state
+            console.log("[ChatbotViewProvider] SSE stream processing finished.");
         }
     }
 
     /** Loads vulnerabilities (SAST/IaC/SCA now) */
     private async _loadVulnerabilities(): Promise<void> {
-        if (!this._state.projectId) { /* ... */ return; }
-        if (this._state.isVulnListLoading) return;
+        if (!this._state.projectId) { return; }
+        if (this._state.isVulnListLoading) { return; }
 
         console.log(`[ChatbotViewProvider] Loading vulnerabilities for project: ${this._state.projectId}`);
         this._state.isVulnListLoading = true;
@@ -352,31 +401,34 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
         }
     }
 
-     /**
-     * Updates the provider's configuration state.
-     * @param config The project configuration from extension.ts
-     */
+    /**
+    * Updates the provider's configuration state.
+    * @param config The project configuration from extension.ts
+    */
     public updateConfiguration(config: ProjectConfig | null): void {
         const oldProjectId = this._state.projectId;
         const newProjectId = config?.projectId ?? null;
-        console.log(`[ChatbotViewProvider] Updating configuration. Old ProjectId: ${oldProjectId}, New ProjectId: ${newProjectId}`);
+        const oldWorkspaceRoot = this._workspaceRoot;
+        const newWorkspaceRoot = config?.workspaceRoot ?? null;
+
+        console.log(`[ChatbotViewProvider] Updating configuration. Old PID: ${oldProjectId}, New PID: ${newProjectId}. Old Root: ${oldWorkspaceRoot}, New Root: ${newWorkspaceRoot}`);
 
         this._state.projectId = newProjectId;
+        this._workspaceRoot = newWorkspaceRoot;
 
-        if (newProjectId !== oldProjectId) {
-            console.log("[ChatbotViewProvider] Project ID changed, resetting conversation and vulnerability list.");
+        if (newProjectId !== oldProjectId || newWorkspaceRoot !== oldWorkspaceRoot) {
+            console.log("[ChatbotViewProvider] Project ID or Workspace Root changed, resetting conversation and vulnerability list.");
             this.resetConversationState();
             this._state.vulnerabilities = [];
             this._state.selectedVulnerability = null;
             if (newProjectId && this._view) {
-                 this.refreshVulnerabilities(); // Load vulnerabilities for the new project
+                this.refreshVulnerabilities();
             } else {
-                 this._state.error = newProjectId ? null : "Project not configured.";
-                 this._notifyWebviewState();
+                this._state.error = newProjectId ? null : "Project not configured.";
+                this._notifyWebviewState();
             }
         } else {
-             // Project ID didn't change, but other config might have - notify state anyway
-             this._notifyWebviewState();
+            this._notifyWebviewState();
         }
     }
 
@@ -390,22 +442,22 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
 
     // --- Helper Methods (internal) ---
     private _prepareVulnerabilitiesForWebview(fullVulnerabilities: DetailedVulnerability[]): VulnerabilityInfoForWebview[] {
-         return (fullVulnerabilities || [])
-             .filter(v => v?.vulnerability?.vulnerabilityType === 'sast' || v?.vulnerability?.vulnerabilityType === 'iac' || v?.vulnerability?.vulnerabilityType === 'sca')
-             .map(vuln => {
-                 let fullPath = '';
-                 if (vuln && 'path' in vuln && typeof vuln.path === 'string') { fullPath = vuln.path; }
-                 else if (vuln && 'scaFilePath' in vuln && typeof vuln.scaFilePath === 'string') { fullPath = vuln.scaFilePath; } // Handle SCA path
+        return (fullVulnerabilities || [])
+            .filter(v => v?.vulnerability?.vulnerabilityType === 'sast' || v?.vulnerability?.vulnerabilityType === 'iac' || v?.vulnerability?.vulnerabilityType === 'sca')
+            .map(vuln => {
+                let fullPath = '';
+                if (vuln && 'path' in vuln && typeof vuln.path === 'string') { fullPath = vuln.path; }
+                else if (vuln && 'scaFilePath' in vuln && typeof vuln.scaFilePath === 'string') { fullPath = vuln.scaFilePath; } // Handle SCA path
 
-                 const shortPath = fullPath ? path.basename(fullPath) : '(path unknown)';
-                 const type = vuln.vulnerability.vulnerabilityType as 'sast' | 'iac' | 'sca';
-                 const name = type === 'sca'
+                const shortPath = fullPath ? path.basename(fullPath) : '(path unknown)';
+                const type = vuln.vulnerability.vulnerabilityType as 'sast' | 'iac' | 'sca';
+                const name = type === 'sca'
                     ? `${vuln.vulnerability?.name || vuln.id}`
                     : (vuln.vulnerability?.name || vuln.id);
 
-                 return { id: vuln.id, name: name, type: type, fullPath: fullPath, shortPath: shortPath };
-             });
-     }
+                return { id: vuln.id, name: name, type: type, fullPath: fullPath, shortPath: shortPath };
+            });
+    }
 
     private _notifyWebviewState() {
         if (!this._view?.webview) { return; }
@@ -426,9 +478,9 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
             selectedVulnerabilityId: currentState.selectedVulnerability?.id || null,
             conversationId: currentState.conversationId,
             projectId: currentState.projectId
-         };
+        };
         const command: ProviderCommand = { command: 'updateState', state: statePayload };
-         // console.log("[ChatbotViewProvider] Posting state to webview:", statePayload); // Debug log
+        // console.log("[ChatbotViewProvider] Posting state to webview:", statePayload); // Debug log
         this._view.webview.postMessage(command);
     }
 
@@ -438,18 +490,21 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
     }
 
     private disposeSSEConnection() {
-         if (this._state.isStreaming && this._state.assistantStreamContent.trim()) { /* ... finalize message ... */ }
-         if (this._eventSourceInstance) {
-             this._eventSourceInstance.close();
-             this._eventSourceInstance = null;
-             console.log("[ChatbotViewProvider] SSE connection closed.");
-         }
-         if (this._state.isStreaming || this._state.assistantStreamContent) {
-             this._state.isStreaming = false;
-             this._state.assistantStreamContent = "";
-             // Don't notify here, let the caller decide when to notify
-         }
-     }
+        if (this._state.isStreaming && this._state.assistantStreamContent.trim()) {
+            this._state.isStreaming = false;
+            this._state.assistantStreamContent = "";
+            this._notifyWebviewState();
+        }
+        if (this._eventSourceInstance) {
+            this._eventSourceInstance.close();
+            this._eventSourceInstance = null;
+            console.log("[ChatbotViewProvider] SSE connection closed.");
+        }
+        if (this._state.isStreaming || this._state.assistantStreamContent) {
+            this._state.isStreaming = false;
+            this._state.assistantStreamContent = "";
+        }
+    }
 
     public resetConversationState() {
         console.log("[ChatbotViewProvider] Resetting conversation state.");

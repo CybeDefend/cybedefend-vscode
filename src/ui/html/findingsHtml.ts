@@ -1,33 +1,49 @@
 // src/ui/html/findingsHtml.ts
-import * as vscode from 'vscode';
 import { escape } from 'lodash';
-import { DetailedVulnerability, VulnerabilitySeverityEnum } from '../../dtos/result/details'; // Ajuster chemin
-import { SastVulnerabilityDetectionDto, IacVulnerabilityDetectionDto, ScaVulnerabilityWithCvssDto } from '../../dtos/result/details'; // Specific types
-import { ScanType } from '../../api/apiService'; // Ajuster chemin
-import { getNonce } from '../../utilities/utils'; // Ajuster chemin
-import { getSeverityClass, severityToIconMap, getCommonAssetUris, getCodiconStyleSheet, severityColorMap } from './commonHtmlUtils';
+import * as vscode from 'vscode';
+// Ensure correct path to DTOs and Enums
 import path from 'path';
+import { ScanType } from '../../api/apiService';
+import { DetailedVulnerability, IacVulnerabilityDetectionDto, SastVulnerabilityDetectionDto, ScaVulnerabilityWithCvssDto, VulnerabilitySeverityEnum } from '../../dtos/result/details';
+import { getNonce } from '../../utilities/utils';
+import { getCodiconStyleSheet, getCommonAssetUris, getSeverityClass, severityColorMap, severityToIconMap } from './commonHtmlUtils';
+
+const NO_FILE_KEY = '(File not specified)'; // Define constant for clarity
 
 /**
  * Groups findings by their file path.
+ * @param findings - Array of vulnerability findings.
+ * @returns Map where keys are file paths and values are arrays of findings for that file.
  */
 function _groupFindingsByFile(findings: DetailedVulnerability[]): Map<string, DetailedVulnerability[]> {
     const grouped = new Map<string, DetailedVulnerability[]>();
-    const NO_FILE_KEY = '(File not specified)';
 
     for (const vuln of findings) {
-        let filePath: string | undefined | null = null;
-        if (!vuln || !vuln.vulnerability) continue; // Skip invalid entries
-
-        if (vuln.vulnerability.vulnerabilityType === 'sast' && 'path' in vuln) {
-            filePath = (vuln as SastVulnerabilityDetectionDto).path;
-        } else if (vuln.vulnerability.vulnerabilityType === 'iac' && 'path' in vuln) {
-            filePath = (vuln as IacVulnerabilityDetectionDto).path;
-        } else if (vuln.vulnerability.vulnerabilityType === 'sca' && 'scaDetectedPackage' in vuln) {
-            filePath = (vuln as ScaVulnerabilityWithCvssDto).scaDetectedPackage?.fileName;
+        // Basic validation of the vulnerability object
+        if (!vuln?.vulnerability) {
+            console.warn("Skipping finding due to missing vulnerability details:", vuln?.id);
+            continue;
         }
 
-        const key = filePath || NO_FILE_KEY;
+        let filePath: string | undefined | null = null;
+
+        // Determine file path based on vulnerability type
+        switch (vuln.vulnerability.vulnerabilityType) {
+            case 'sast':
+                filePath = (vuln as SastVulnerabilityDetectionDto).path;
+                break;
+            case 'iac':
+                filePath = (vuln as IacVulnerabilityDetectionDto).path;
+                break;
+            case 'sca':
+                // For SCA, use the manifest file where the package was detected
+                filePath = (vuln as ScaVulnerabilityWithCvssDto).scaDetectedPackage?.fileName;
+                break;
+            default:
+                console.warn(`Unknown vulnerability type for grouping: ${vuln.vulnerability.vulnerabilityType}`, vuln.id);
+        }
+
+        const key = filePath || NO_FILE_KEY; // Use constant if path is missing
         if (!grouped.has(key)) {
             grouped.set(key, []);
         }
@@ -36,25 +52,15 @@ function _groupFindingsByFile(findings: DetailedVulnerability[]): Map<string, De
     return grouped;
 }
 
-/**
- * Creates the command URI for opening a file.
- */
-function _createOpenFileCommandUri(filePath: string | undefined | null, lineNumber: number): string | null {
-     if (!filePath) return null;
-     const line = Math.max(1, lineNumber);
-     const args = [filePath, line];
-     try {
-        const encodedArgs = encodeURIComponent(JSON.stringify(args));
-        // Assurez-vous que 'cybedefendScanner.openFileLocation' est bien l'ID de votre commande
-        return `command:cybedefendScanner.openFileLocation?${encodedArgs}`;
-     } catch (e) {
-         console.error("Error encoding command URI arguments:", e, args);
-         return null;
-     }
-}
+// REMOVED: _createOpenFileCommandUri function is no longer needed as opening file is handled by the provider.
 
 /**
- * Generates the HTML content for a Findings Webview View.
+ * Generates the HTML content for a Findings Webview View (SAST, IaC, SCA).
+ * @param findings - The list of vulnerabilities to display.
+ * @param scanType - The type of scan ('sast', 'iac', 'sca').
+ * @param webview - The VS Code Webview instance.
+ * @param extensionUri - The URI of the extension directory.
+ * @returns The complete HTML string for the webview.
  */
 export function getFindingsViewHtml(
     findings: DetailedVulnerability[],
@@ -72,74 +78,89 @@ export function getFindingsViewHtml(
     if (findingsCount === 0) {
         findingsGroupHtml = '<p class="no-findings">No findings of this type were detected.</p>';
     } else {
+        // Sort groups alphabetically by file path key
         const sortedGroups = Array.from(groupedFindings.entries()).sort((a, b) => a[0].localeCompare(b[0]));
 
         sortedGroups.forEach(([filePathKey, fileVulns]) => {
             const fileVulnCount = fileVulns.length;
-            const isUnspecifiedFile = filePathKey === '(File not specified)';
+            const isUnspecifiedFile = filePathKey === NO_FILE_KEY;
+            // Use basename for display, keep full path in title/data
             const displayFileName = isUnspecifiedFile ? filePathKey : path.basename(filePathKey);
 
             const listItemsHtml = fileVulns.map(vuln => {
-                if (!vuln || !vuln.vulnerability) return '';
+                // Added check from grouping function for safety, though should be filtered already
+                if (!vuln?.vulnerability) { return ''; }
 
-                const severity = vuln.currentSeverity?.toUpperCase() || VulnerabilitySeverityEnum.UNKNOWN;
-                const iconId = severityToIconMap[severity] || 'question';
+                const severity = vuln.currentSeverity?.toUpperCase() as VulnerabilitySeverityEnum || VulnerabilitySeverityEnum.UNKNOWN;
+                const iconId = severityToIconMap[severity] || severityToIconMap.UNKNOWN;
                 const severityClass = getSeverityClass(severity);
-                const severityColor = severityColorMap[severity] || severityColorMap['UNKNOWN'];
+                const severityColor = severityColorMap[severity] || severityColorMap.UNKNOWN;
                 const severityStyle = `color: ${severityColor}; font-weight: bold;`;
-                const meta = vuln.vulnerability;
-                const title = escape(meta.name || vuln.id);
-                let line = 0;
-                let commandUri: string | null = null;
-                let locationText = 'N/A';
 
-                 if (vuln.vulnerability.vulnerabilityType === 'sast' && 'path' in vuln && 'vulnerableStartLine' in vuln) {
-                    const sastVuln = vuln as SastVulnerabilityDetectionDto;
-                    line = sastVuln.vulnerableStartLine ?? 0;
-                    locationText = `Ligne ${line}`;
-                    commandUri = _createOpenFileCommandUri(sastVuln.path, line);
-                } else if (vuln.vulnerability.vulnerabilityType === 'iac' && 'path' in vuln && 'vulnerableStartLine' in vuln) {
-                    const iacVuln = vuln as IacVulnerabilityDetectionDto;
-                    line = iacVuln.vulnerableStartLine ?? 0;
-                    locationText = `Ligne ${line}`;
-                    commandUri = _createOpenFileCommandUri(iacVuln.path, line);
-                } else if (vuln.vulnerability.vulnerabilityType === 'sca' && 'scaDetectedPackage' in vuln) {
-                    const scaVuln = vuln as ScaVulnerabilityWithCvssDto;
-                    const pkg = scaVuln.scaDetectedPackage;
-                    locationText = `${escape(pkg?.packageName || '?')}@${escape(pkg?.packageVersion || '?')}`;
-                    line = 1;
-                    commandUri = _createOpenFileCommandUri(pkg?.fileName, line);
+                const meta = vuln.vulnerability;
+                const title = escape(meta.name || vuln.id); // Use ID as fallback title
+                let line = 0; // Default line number
+                let locationText = ''; // Text to display for location
+
+                // Determine location text based on type
+                switch (vuln.vulnerability.vulnerabilityType) {
+                    case 'sast': {
+                        const sastVuln = vuln as SastVulnerabilityDetectionDto;
+                        line = sastVuln.vulnerableStartLine ?? 0;
+                        locationText = line > 0 ? `Line ${line}` : 'Location N/A';
+                        break;
+                    }
+                    case 'iac': {
+                        const iacVuln = vuln as IacVulnerabilityDetectionDto;
+                        line = iacVuln.vulnerableStartLine ?? 0;
+                        locationText = line > 0 ? `Line ${line}` : 'Location N/A';
+                        break;
+                    }
+                    case 'sca': {
+                        const scaVuln = vuln as ScaVulnerabilityWithCvssDto;
+                        const pkg = scaVuln.scaDetectedPackage;
+                        locationText = pkg ? `${escape(pkg.packageName || '?')}@${escape(pkg.packageVersion || '?')}` : 'Package N/A';
+                        // Line number isn't directly relevant for SCA in the same way,
+                        line = 0;
+                        break;
+                    }
+                    default:
+                        locationText = 'Location N/A';
                 }
 
-                const locationHtml = commandUri
-                    ? `<a class="finding-location-link" href="${commandUri}" title="Go to ${escape(filePathKey || '')}:${line}">${locationText}</a>`
-                    : `<span class="finding-location">${locationText}</span>`;
+                const locationHtml = `<span class="finding-location">${locationText}</span>`;
 
                 let vulnDataString = '';
                 try {
                     vulnDataString = escape(JSON.stringify(vuln));
                 } catch (e) {
                     console.error("Failed to stringify finding data:", e, vuln.id);
-                    vulnDataString = escape(JSON.stringify({ id: vuln.id, error: 'Data too complex' }));
+                    vulnDataString = escape(JSON.stringify({ id: vuln.id, error: 'Data too complex or circular' }));
                 }
-
                 return `
-                    <li class="finding-item ${severityClass}" data-vulnerability='${vulnDataString}' data-scan-type='${scanType}' title="${escape(vuln.id)} - Click for details" tabindex="0">
-                        <span class="codicon codicon-${iconId} severity-icon" style="${severityStyle}" aria-label="Severity ${severity}"></span>
+                    <li class="finding-item ${severityClass}"
+                        data-vulnerability='${vulnDataString}'
+                        data-scan-type='${scanType}'
+                        title="${escape(vuln.id)} - Click for details and location"
+                        tabindex="0"
+                        role="button"
+                        aria-label="Vulnerability: ${title}, Severity: ${severity}, Location: ${locationText}. Press Enter or Space to view details and location.">
+                        <span class="codicon codicon-${iconId} severity-icon" style="${severityStyle}" aria-hidden="true"></span>
                         <div class="finding-content">
-                             <span class="finding-title">${title}</span>
-                             ${locationHtml}
+                            <span class="finding-title">${title}</span>
+                            ${locationHtml}
                         </div>
                     </li>`;
             }).join('');
 
+            // Use <details> for collapsibility, open few items by default
             findingsGroupHtml += `
                 <details class="file-group" ${findingsCount <= 15 ? 'open' : ''}>
                     <summary class="file-summary" title="${escape(filePathKey)}">
-                         <span class="codicon codicon-chevron-right"></span>
-                         <span class="codicon file-icon ${isUnspecifiedFile ? 'codicon-question' : 'codicon-file-code'}"></span>
-                         <span class="file-name">${escape(displayFileName)}</span>
-                         <span class="file-vuln-count">${fileVulnCount}</span>
+                        <span class="codicon codicon-chevron-right" aria-hidden="true"></span>
+                        <span class="codicon file-icon ${isUnspecifiedFile ? 'codicon-question' : 'codicon-file-code'}" aria-hidden="true"></span>
+                        <span class="file-name">${escape(displayFileName)}</span>
+                        <span class="file-vuln-count" aria-label="${fileVulnCount} vulnerabilities in this file">${fileVulnCount}</span>
                     </summary>
                     <ul class="findings-list-nested">
                         ${listItemsHtml}
@@ -149,7 +170,7 @@ export function getFindingsViewHtml(
         });
     }
 
-    // --- Complete HTML with Styles ---
+    // --- Complete HTML with Styles and Script ---
     return `<!DOCTYPE html>
     <html lang="en">
     <head>
@@ -165,19 +186,18 @@ export function getFindingsViewHtml(
         <link href="${codiconsUri}" rel="stylesheet" />
         <title>${scanType.toUpperCase()} Findings</title>
         <style>
-            /* CORRECTION: Inclure la règle @font-face */
             ${getCodiconStyleSheet(codiconsFontUri)}
 
             :root {
-                 --severity-color-critical: ${severityColorMap[VulnerabilitySeverityEnum.CRITICAL]};
-                 --severity-color-high: ${severityColorMap[VulnerabilitySeverityEnum.HIGH]};
-                 --severity-color-medium: ${severityColorMap[VulnerabilitySeverityEnum.MEDIUM]};
-                 --severity-color-low: ${severityColorMap[VulnerabilitySeverityEnum.LOW]};
-                 --severity-color-info: ${severityColorMap[VulnerabilitySeverityEnum.INFO]};
-                 --severity-color-unknown: ${severityColorMap['UNKNOWN']};
-                 --file-group-border: 1px solid var(--vscode-tree-tableColumnsBorderColor, var(--vscode-editorGroup-border));
-                 --file-summary-bg: rgba(var(--vscode-list-inactiveSelectionBackground-rgb), 0.5);
-                 --file-summary-hover-bg: var(--vscode-list-hoverBackground);
+                --severity-color-critical: ${severityColorMap[VulnerabilitySeverityEnum.CRITICAL]};
+                --severity-color-high: ${severityColorMap[VulnerabilitySeverityEnum.HIGH]};
+                --severity-color-medium: ${severityColorMap[VulnerabilitySeverityEnum.MEDIUM]};
+                --severity-color-low: ${severityColorMap[VulnerabilitySeverityEnum.LOW]};
+                --severity-color-info: ${severityColorMap[VulnerabilitySeverityEnum.INFO]};
+                --severity-color-unknown: ${severityColorMap['UNKNOWN']};
+                --file-group-border: 1px solid var(--vscode-tree-tableColumnsBorderColor, var(--vscode-editorGroup-border));
+                --file-summary-bg: rgba(var(--vscode-button-secondaryBackground-rgb), 0.1); /* Subtle background */
+                --file-summary-hover-bg: var(--vscode-list-hoverBackground);
             }
 
             body {
@@ -188,136 +208,159 @@ export function getFindingsViewHtml(
                 background-color: var(--vscode-sideBar-background);
             }
 
-             .findings-header {
-                 padding: 10px 15px;
-                 font-weight: 600;
-                 color: var(--vscode-sideBarTitle-foreground);
-                 background-color: var(--vscode-sideBarSectionHeader-background);
-                 border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border);
-                 position: sticky; top: 0; z-index: 10;
-                 font-size: 0.95em;
-             }
+            .findings-header { /* Optional header */
+                padding: 5px 10px; font-weight: 600;
+                color: var(--vscode-sideBarTitle-foreground);
+                background-color: var(--vscode-sideBarSectionHeader-background);
+                border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border);
+                position: sticky; top: 0; z-index: 10;
+                font-size: 0.95em;
+            }
 
-            /* Styles pour les groupes de fichiers */
+            /* File group styling */
             .file-group { border-bottom: var(--file-group-border); }
             .file-group:last-child { border-bottom: none; }
-             .file-summary {
-                 display: flex; align-items: center;
-                 padding: 6px 10px; cursor: pointer;
-                 background-color: var(--file-summary-bg);
-                 transition: background-color 0.1s ease-in-out;
-                 gap: 5px; list-style: none;
-             }
-             .file-summary:hover { background-color: var(--file-summary-hover-bg); }
-             .file-summary::marker,
-             .file-summary::-webkit-details-marker { display: none; }
+            .file-summary {
+                display: flex; align-items: center; padding: 6px 10px;
+                cursor: pointer; background-color: var(--file-summary-bg);
+                transition: background-color 0.1s ease-in-out;
+                gap: 5px; list-style: none; /* Remove default marker */
+                user-select: none; /* Prevent text selection on summary */
+            }
+            .file-summary:hover { background-color: var(--file-summary-hover-bg); }
+            .file-summary::marker, .file-summary::-webkit-details-marker { display: none; }
 
-             .file-summary .codicon-chevron-right {
-                 font-size: 1em; color: var(--vscode-icon-foreground);
-                 margin-right: 2px; width: 16px; text-align: center;
-                 transition: transform 0.15s ease-in-out;
-             }
-             details[open] > summary .codicon-chevron-right {
-                 transform: rotate(90deg);
-             }
+            .file-summary .codicon-chevron-right {
+                font-size: 1em; color: var(--vscode-icon-foreground); margin-right: 2px;
+                width: 16px; text-align: center; transition: transform 0.15s ease-in-out;
+            }
+            details[open] > summary .codicon-chevron-right { transform: rotate(90deg); }
+            .file-summary .file-icon { color: var(--vscode-icon-foreground); font-size: 1em; }
+            .file-name {
+                flex-grow: 1; font-weight: 600; overflow: hidden;
+                text-overflow: ellipsis; white-space: nowrap;
+                color: var(--vscode-list-highlightForeground); margin-left: 2px;
+            }
+            .file-vuln-count {
+                font-size: 0.85em; font-weight: normal; padding: 1px 5px;
+                border-radius: 8px; background-color: var(--vscode-badge-background);
+                color: var(--vscode-badge-foreground); margin-left: auto; flex-shrink: 0;
+            }
 
-             .file-summary .file-icon { color: var(--vscode-icon-foreground); font-size: 1em; }
-             .file-name {
-                 flex-grow: 1; font-weight: normal; overflow: hidden;
-                 text-overflow: ellipsis; white-space: nowrap;
-                 color: var(--vscode-list-highlightForeground); margin-left: 2px;
-             }
-             .file-vuln-count {
-                 font-size: 0.85em; font-weight: normal; padding: 1px 5px;
-                 border-radius: 8px; background-color: var(--vscode-badge-background);
-                 color: var(--vscode-badge-foreground); margin-left: auto; flex-shrink: 0;
-             }
+            /* Findings list styling */
+            .findings-list-nested { list-style: none; padding: 0; margin: 0; }
+            li.finding-item {
+                padding: 5px 10px 5px 30px; /* Indentation */
+                margin: 0; border-radius: 0; cursor: pointer;
+                display: flex; align-items: center; gap: 8px;
+                border: none;
+                border-top: 1px solid var(--vscode-tree-tableColumnsBorderColor, var(--vscode-editorGroup-border));
+            }
+            details[open] > ul.findings-list-nested > li:first-child { border-top: none; }
+            li.finding-item:hover { background-color: var(--vscode-list-hoverBackground); }
+            li.finding-item:focus {
+                outline: 1px solid var(--vscode-focusBorder);
+                background-color: var(--vscode-list-focusBackground);
+                outline-offset: -1px;
+            }
 
-             /* Liste imbriquée */
-             .findings-list-nested { list-style: none; padding: 0; margin: 0; }
-             li.finding-item {
-                 padding: 5px 10px 5px 28px; /* Indentation */
-                 margin: 0; border-radius: 0; cursor: pointer;
-                 display: flex; align-items: center; gap: 8px;
-                 border: none;
-                 border-top: 1px solid var(--vscode-tree-tableColumnsBorderColor, var(--vscode-editorGroup-border));
-             }
-             details[open] > ul.findings-list-nested > li:first-child { border-top: none; }
-             li.finding-item:hover { background-color: var(--vscode-list-hoverBackground); }
-             li.finding-item:focus { outline: 1px solid var(--vscode-focusBorder); background-color: var(--vscode-list-focusBackground); outline-offset: -1px; }
-
-            .severity-icon { 
-                flex-shrink: 0; 
-                font-size: 0.9em; 
-                width: 20px; 
-                height: 20px;
-                text-align: center; 
-                margin-right: 5px;
-                font-weight: bold;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                background-color: rgba(255, 255, 255, 0.08);
-                border: 1px solid currentColor;
+            .severity-icon {
+                flex-shrink: 0; font-size: 1em; width: 18px; height: 18px;
+                text-align: center; margin-right: 5px; font-weight: bold;
+                border-radius: 3px; /* Slightly rounded square */
+                display: flex; align-items: center; justify-content: center;
+                border: 1px solid transparent; /* Add border for focus state */
                 transition: transform 0.1s ease, background-color 0.1s ease;
             }
-            
+            /* Add subtle background on hover/focus */
             li.finding-item:hover .severity-icon,
             li.finding-item:focus .severity-icon {
-                background-color: rgba(255, 255, 255, 0.15);
-                transform: scale(1.05);
+                 background-color: rgba(var(--vscode-foreground-rgb), 0.08);
+                 transform: scale(1.05);
             }
-            
-            /* Les classes color-* ne sont plus nécessaires car nous utilisons style inline */
 
             .finding-content { flex-grow: 1; overflow: hidden; display: flex; flex-direction: column; gap: 1px; }
-            .finding-title { font-weight: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-            .finding-location, .finding-location-link { font-size: 0.9em; color: var(--vscode-descriptionForeground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-             .finding-location-link { cursor: pointer; text-decoration: none; color: var(--vscode-textLink-foreground); }
-             .finding-location-link:hover { text-decoration: underline; color: var(--vscode-textLink-activeForeground); }
+            .finding-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .finding-location { font-size: 0.9em; color: var(--vscode-descriptionForeground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
             p.no-findings { padding: 20px; text-align: center; color: var(--vscode-descriptionForeground); font-style: italic; }
         </style>
     </head>
     <body>
-         <div class="findings-header">
-             ${findingsCount} ${scanType.toUpperCase()} Finding${findingsCount !== 1 ? 's' : ''}
-         </div>
+        <div class="findings-header">
+            ${findingsCount} ${scanType.toUpperCase()} Finding${findingsCount !== 1 ? 's' : ''}
+        </div>
         ${findingsGroupHtml}
-        <script nonce="${nonce}">
-            const vscode = acquireVsCodeApi();
-            document.querySelectorAll('.finding-item').forEach(item => {
-                 item.setAttribute('tabindex', '0');
 
-                 item.addEventListener('click', (event) => {
-                     if (event.target.closest('.finding-location-link')) { return; }
-                     const vulnDataString = item.getAttribute('data-vulnerability');
-                     const scanType = item.getAttribute('data-scan-type');
-                     if (vulnDataString && scanType) {
+        <script nonce="${nonce}">
+            // Get VS Code API handle (works in webviews)
+            const vscode = acquireVsCodeApi();
+
+            // Add event listeners to each finding item
+            document.querySelectorAll('.finding-item').forEach(item => {
+                // Ensure items are keyboard accessible
+                item.setAttribute('tabindex', '0'); // Make focusable
+                item.setAttribute('role', 'button'); // Indicate it's interactive
+
+                // --- CLICK LISTENER ---
+                item.addEventListener('click', (event) => {
+                    // Prevent accidental clicks on nested elements if any were added later
+                    if (event.currentTarget !== item) return;
+
+                    const vulnDataString = item.getAttribute('data-vulnerability');
+                    const scanTypeValue = item.getAttribute('data-scan-type');
+
+                    if (vulnDataString && scanTypeValue) {
                         try {
                             const vulnerabilityData = JSON.parse(vulnDataString);
-                            vscode.postMessage({ command: 'triggerShowDetails', vulnerabilityData, scanType });
-                        } catch (e) { console.error("Failed to parse vulnerability data:", e); }
-                     } else { console.warn("Missing data attributes on list item."); }
-                 });
+                            // **MODIFIED**: Send the new 'vulnerabilityClicked' command
+                            vscode.postMessage({
+                                command: 'vulnerabilityClicked', // New command name
+                                vulnerabilityData: vulnerabilityData,
+                                scanType: scanTypeValue
+                            });
+                        } catch (e) {
+                            console.error("FindingsHTML: Failed to parse vulnerability data on click:", e, vulnDataString);
+                            // Optionally inform the user via an alert or console message in dev tools
+                            vscode.postMessage({ command: 'error', text: 'Failed to process vulnerability data.' });
+                        }
+                    } else {
+                        console.warn("FindingsHTML: Missing data attributes on clicked item.", item);
+                    }
+                });
 
-                 item.addEventListener('keydown', (event) => {
-                     if (event.key === 'Enter' || event.key === ' ') {
-                         if (event.target.closest('.finding-location-link')) { return; }
-                         event.preventDefault();
-                         const vulnDataString = item.getAttribute('data-vulnerability');
-                         const scanType = item.getAttribute('data-scan-type');
-                         if (vulnDataString && scanType) {
-                             try {
-                                 const vulnerabilityData = JSON.parse(vulnDataString);
-                                 vscode.postMessage({ command: 'triggerShowDetails', vulnerabilityData, scanType });
-                             } catch (e) { console.error("Failed to parse vulnerability data:", e); }
-                         } else { console.warn("Missing data attributes on list item."); }
-                     }
-                 });
+                // --- KEYDOWN LISTENER (for Enter/Space) ---
+                item.addEventListener('keydown', (event) => {
+                    // Trigger action on Enter or Spacebar press when item is focused
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        // Prevent default spacebar scroll or other default actions
+                        event.preventDefault();
+
+                        // Prevent accidental triggers on nested elements
+                        if (event.currentTarget !== item) return;
+
+                        const vulnDataString = item.getAttribute('data-vulnerability');
+                        const scanTypeValue = item.getAttribute('data-scan-type');
+
+                        if (vulnDataString && scanTypeValue) {
+                            try {
+                                const vulnerabilityData = JSON.parse(vulnDataString);
+                                // **MODIFIED**: Send the new 'vulnerabilityClicked' command
+                                vscode.postMessage({
+                                    command: 'vulnerabilityClicked', // New command name
+                                    vulnerabilityData: vulnerabilityData,
+                                    scanType: scanTypeValue
+                                });
+                            } catch (e) {
+                                console.error("FindingsHTML: Failed to parse vulnerability data on keydown:", e, vulnDataString);
+                                vscode.postMessage({ command: 'error', text: 'Failed to process vulnerability data.' });
+                            }
+                        } else {
+                            console.warn("FindingsHTML: Missing data attributes on keydown target item.", item);
+                        }
+                    }
+                });
             });
-
-             // Le JS pour le chevron n'est plus nécessaire grâce au CSS
         </script>
     </body>
     </html>`;

@@ -1,8 +1,8 @@
 // src/ui/html/commonHtmlUtils.ts
 import * as vscode from 'vscode';
-import { VulnerabilitySeverityEnum } from '../../dtos/result/details'; // Ajuster le chemin si nécessaire
+import { VulnerabilitySeverityEnum } from '../../dtos/result/details';
 
-// --- Maps Sévérité ---
+// --- Maps Severity to Icon ---
 export const severityToIconMap: Record<string, string> = {
     [VulnerabilitySeverityEnum.CRITICAL]: 'letter-c',
     [VulnerabilitySeverityEnum.HIGH]: 'letter-h',
@@ -21,7 +21,7 @@ export const severityToCssClassMap: Record<string, string> = {
     'UNKNOWN': 'severity-unknown'
 };
 
-// Nouvelles couleurs personnalisées pour les lettres
+// Custom colors for letters
 export const severityColorMap: Record<string, string> = {
     [VulnerabilitySeverityEnum.CRITICAL]: 'rgb(153, 27, 27)',
     [VulnerabilitySeverityEnum.HIGH]: 'rgb(154, 52, 18)',
@@ -32,30 +32,30 @@ export const severityColorMap: Record<string, string> = {
 };
 
 /**
- * Génère une classe CSS basée sur la sévérité.
+ * Generates a CSS class based on severity.
  */
 export function getSeverityClass(severity: string | undefined | null): string {
     return severityToCssClassMap[severity?.toUpperCase() || 'UNKNOWN'] || 'severity-unknown';
 }
 
 /**
- * Convertit un chemin local en URI utilisable par la webview.
+ * Converts a local path to a URI usable by the webview.
  */
 export function getWebviewUri(webview: vscode.Webview, extensionUri: vscode.Uri, pathList: string[]): vscode.Uri {
     return webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, ...pathList));
 }
 
 /**
- * Génère les URIs pour les assets communs (Codicons).
+ * Generates the URIs for common assets (Codicons).
  */
 export function getCommonAssetUris(webview: vscode.Webview, extensionUri: vscode.Uri) {
-     const codiconsUri = getWebviewUri(webview, extensionUri, ['dist', 'codicon.css']);
-     const codiconsFontUri = getWebviewUri(webview, extensionUri, ['dist', 'codicon.ttf']);
-     return { codiconsUri, codiconsFontUri };
+    const codiconsUri = getWebviewUri(webview, extensionUri, ['dist', 'codicon.css']);
+    const codiconsFontUri = getWebviewUri(webview, extensionUri, ['dist', 'codicon.ttf']);
+    return { codiconsUri, codiconsFontUri };
 }
 
 /**
- * Génère le CSS commun pour charger les Codicons.
+ * Generates the common CSS to load Codicons.
  */
 export function getCodiconStyleSheet(fontUri: vscode.Uri): string {
     return `
@@ -74,17 +74,15 @@ export function getCodiconStyleSheet(fontUri: vscode.Uri): string {
              background-position: center center;
              -webkit-font-smoothing: antialiased;
              -moz-osx-font-smoothing: grayscale;
-             user-select: none; /* Empêche la sélection de l'icône */
+             user-select: none;
          }
          
-         /* Styles pour les lettres de sévérité */
          .codicon.codicon-letter-c::before { content: "C"; }
          .codicon.codicon-letter-h::before { content: "H"; }
          .codicon.codicon-letter-m::before { content: "M"; }
          .codicon.codicon-letter-l::before { content: "L"; }
          .codicon.codicon-letter-i::before { content: "i"; }
          
-         /* Styles pour l'animation de chargement */
          .codicon-loading.codicon-modifier-spin {
              animation: codicon-spin 1.5s infinite linear;
          }

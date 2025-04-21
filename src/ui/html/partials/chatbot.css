@@ -288,6 +288,10 @@ body {
     /* Ensure text color contrasts */
 }
 
+.message-content p {
+    margin: 0;
+}
+
 .message-ai .message-content {
     background-color: var(--message-ai-bg);
     border: 1px solid var(--message-ai-border);
@@ -366,6 +370,113 @@ code:not(pre code) {
     /* Slightly smaller */
     color: var(--secondary-text-color);
     /* Different color for inline */
+}
+
+/* --- Styles améliorés pour le Markdown --- */
+/* Tableaux */
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 12px 0;
+    font-size: 0.9em;
+}
+
+th,
+td {
+    padding: 6px 10px;
+    border: 1px solid var(--border-color);
+    text-align: left;
+}
+
+th {
+    background-color: rgba(var(--vscode-editor-foreground-rgb), 0.05);
+    font-weight: 600;
+}
+
+tr:nth-child(even) {
+    background-color: rgba(var(--vscode-editor-foreground-rgb), 0.02);
+}
+
+/* Listes */
+ul,
+ol {
+    padding-left: 20px;
+    margin: 8px 0;
+}
+
+li {
+    margin-bottom: 4px;
+}
+
+/* Titres */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    margin-top: 16px;
+    margin-bottom: 8px;
+    font-weight: 600;
+    line-height: 1.25;
+}
+
+h1 {
+    font-size: 1.5em;
+}
+
+h2 {
+    font-size: 1.3em;
+}
+
+h3 {
+    font-size: 1.15em;
+}
+
+h4 {
+    font-size: 1.05em;
+}
+
+h5 {
+    font-size: 1em;
+}
+
+h6 {
+    font-size: 0.95em;
+}
+
+/* Citations */
+blockquote {
+    border-left: 3px solid var(--border-color);
+    padding-left: 12px;
+    margin: 10px 0;
+    color: var(--secondary-text-color);
+    font-style: italic;
+}
+
+/* Liens */
+a {
+    color: var(--link-color);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+/* Images */
+img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+    margin: 8px 0;
+}
+
+/* Règle horizontale */
+hr {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 16px 0;
 }
 
 /* --- Input Area --- */
@@ -488,7 +599,8 @@ code:not(pre code) {
 /* --- Styles pour l'affichage du contexte (À AJOUTER) --- */
 #context-display {
     padding: 6px 10px;
-    background-color: var(--vscode-toolbar-hoverBackground); /* Couleur subtile */
+    background-color: var(--vscode-toolbar-hoverBackground);
+    /* Couleur subtile */
     color: var(--vscode-descriptionForeground);
     border-radius: 4px;
     font-size: 0.9em;
@@ -496,13 +608,17 @@ code:not(pre code) {
     align-items: center;
     gap: 6px;
     border: 1px solid var(--border-color);
-    flex-shrink: 0; /* Empêche de rétrécir */
+    flex-shrink: 0;
+    /* Empêche de rétrécir */
     transition: opacity 0.2s ease-in-out, max-height 0.2s ease-in-out, margin 0.2s ease-in-out, padding 0.2s ease-in-out, border 0.2s ease-in-out;
     overflow: hidden;
-    max-height: 50px; /* Hauteur suffisante pour une ligne */
+    max-height: 50px;
+    /* Hauteur suffisante pour une ligne */
     opacity: 1;
-    margin-top: -5px; /* Compenser un peu le gap du container principal */
-    margin-bottom: 5px; /* Espace avant les messages */
+    margin-top: -5px;
+    /* Compenser un peu le gap du container principal */
+    margin-bottom: 5px;
+    /* Espace avant les messages */
 }
 
 #context-display.hidden {
@@ -511,23 +627,29 @@ code:not(pre code) {
     padding-top: 0;
     padding-bottom: 0;
     border-width: 0;
-    margin-top: -10px; /* Ajustement plus important quand caché */
+    margin-top: -10px;
+    /* Ajustement plus important quand caché */
     margin-bottom: 0;
     /* transform: scaleY(0); /* Peut causer des sauts, max-height est plus doux */
 }
 
 #context-display .codicon {
     font-size: 1.1em;
-    flex-shrink: 0; /* Empêche l'icône de rétrécir */
+    flex-shrink: 0;
+    /* Empêche l'icône de rétrécir */
 }
 
 #context-vuln-name {
-    font-weight: 600; /* Mettre en évidence le nom */
-    color: var(--vscode-editor-foreground); /* Texte un peu plus visible */
+    font-weight: 600;
+    /* Mettre en évidence le nom */
+    color: var(--vscode-editor-foreground);
+    /* Texte un peu plus visible */
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis; /* Gérer les noms longs */
-    flex-grow: 1; /* Prend l'espace restant */
+    text-overflow: ellipsis;
+    /* Gérer les noms longs */
+    flex-grow: 1;
+    /* Prend l'espace restant */
 }
 
 /* --- Styles pour le Streaming --- */
@@ -539,14 +661,17 @@ code:not(pre code) {
     display: inline-block;
     /* Permet de lui donner une largeur/hauteur si nécessaire */
     width: 8px;
-    /* Ajuster la largeur si désiré */
-    font-weight: bold;
-    color: var(--text-color);
-    /* Utilise la couleur du texte environnant */
+    height: 16px;
+    /* Augmenter la hauteur du curseur */
+    background-color: var(--text-color);
+    /* Utiliser un fond avec la couleur du texte au lieu d'un caractère */
     animation: blink 1s step-end infinite;
-    margin-left: 2px;
+    margin-left: 4px;
     /* Petit espace après le texte */
-    /* On peut aussi utiliser 'visibility' au lieu d'opacity */
+    border-radius: 1px;
+    /* Légère arrondi des coins */
+    vertical-align: middle;
+    /* Alignement vertical avec le texte */
 }
 
 /* Définition de l'animation de clignotement */

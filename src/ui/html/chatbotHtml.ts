@@ -1,13 +1,13 @@
 // src/ui/html/chatbotHtml.ts
-import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as vscode from 'vscode';
 // lodash escape est toujours utile ici pour échapper les données *avant* injection dans JSON
 import { escape } from 'lodash';
-import { getNonce } from '../../utilities/utils';
 import { MessageDto } from '../../dtos/ai/response/message.dto';
 import { DetailedVulnerability } from '../../dtos/result/details';
-import { getCommonAssetUris, getCodiconStyleSheet } from './commonHtmlUtils';
+import { getNonce } from '../../utilities/utils';
+import { getCodiconStyleSheet, getCommonAssetUris } from './commonHtmlUtils';
 
 /**
  * Represents the full state received from the ChatbotViewProvider.
@@ -61,7 +61,7 @@ interface WebviewStateForJs {
  * @returns The HTML-escaped string, or an empty string if input is not a string.
  */
 function escapeHtmlForExtension(unsafe: string | undefined | null): string {
-    if (typeof unsafe !== 'string') return '';
+    if (typeof unsafe !== 'string') { return ''; }
     return escape(unsafe); // Utilise lodash.escape
 }
 
@@ -81,7 +81,7 @@ export function getChatbotHtml(
 ): string {
     try {
         const nonce = getNonce();
-        
+
         const { codiconsUri, codiconsFontUri } = getCommonAssetUris(webview, extensionUri);
 
         // --- URIs pour les nouvelles bibliothèques JS ---
@@ -156,15 +156,15 @@ export function getChatbotHtml(
         // Specifically, escape characters that would break the JS string literal (' and \`)
         // Also escape backslashes for correct JSON parsing within JS.
         const initialStateJsonString = JSON.stringify(initialStateForJs)
-                                           .replace(/\\/g, '\\\\') // Escape backslashes
-                                           .replace(/'/g, "\\'")  // Escape single quotes
-                                           .replace(/`/g, "\\`"); // Escape backticks
+            .replace(/\\/g, '\\\\') // Escape backslashes
+            .replace(/'/g, "\\'")  // Escape single quotes
+            .replace(/`/g, "\\`"); // Escape backticks
 
         // Prepare full vulnerabilities data JSON string for JS injection
         const fullVulnerabilitiesDataJsonString = JSON.stringify(state.vulnerabilities || [])
-                                                    .replace(/\\/g, '\\\\')
-                                                    .replace(/'/g, "\\'")
-                                                    .replace(/`/g, "\\`");
+            .replace(/\\/g, '\\\\')
+            .replace(/'/g, "\\'")
+            .replace(/`/g, "\\`");
 
 
         // --- Inject Data into HTML Template ---
@@ -176,6 +176,9 @@ export function getChatbotHtml(
             // Inject prepared JSON strings into placeholders within the <script> tag
             .replace(`'{{initialStateJson}}'`, `'${initialStateJsonString}'`)
             .replace(`'{{fullVulnerabilitiesDataJson}}'`, `'${fullVulnerabilitiesDataJsonString}'`)
+            // Inject scripts for Markdown parsing
+            .replace(/{{markedScriptUri}}/g, markedScriptUri.toString())
+            .replace(/{{dompurifyScriptUri}}/g, dompurifyScriptUri.toString())
             // Inject the main JS code
             .replace(/{{script}}/g, jsContent);
 

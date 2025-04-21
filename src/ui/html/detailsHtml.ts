@@ -1,21 +1,24 @@
 // src/ui/html/detailsHtml.ts
-import * as vscode from 'vscode';
 import { escape } from 'lodash';
+import * as vscode from 'vscode';
+import { ScanType } from '../../api/apiService';
 import {
+    CodeSnippetDto, DataFlowItemDto,
     GetProjectVulnerabilityByIdResponseDto,
-    VulnerabilitySastDto, VulnerabilityIacDto, VulnerabilityScaDto,
-    CodeSnippetDto, DataFlowItemDto, HistoryItemDto, CodeLineDto,
-    VulnerabilityMetadataDto, VulnerabilityScaMetadataDto,
-    ScaDetectedLibraryDto, VulnerabilityScaReferenceDto
-} from '../../dtos/result/response/get-project-vulnerability-by-id-response.dto'; // Ajuster chemin
-import { ScanType } from '../../api/apiService'; // Ajuster chemin
-import { getNonce } from '../../utilities/utils'; // Ajuster chemin
-import { getSeverityClass, getCommonAssetUris, getCodiconStyleSheet, severityColorMap, severityToIconMap } from './commonHtmlUtils'; // Importer depuis utils
+    HistoryItemDto,
+    VulnerabilityIacDto,
+    VulnerabilitySastDto,
+    VulnerabilityScaDto,
+    VulnerabilityScaMetadataDto,
+    VulnerabilityScaReferenceDto
+} from '../../dtos/result/response/get-project-vulnerability-by-id-response.dto';
+import { getNonce } from '../../utilities/utils';
+import { getCodiconStyleSheet, getCommonAssetUris, getSeverityClass, severityColorMap, severityToIconMap } from './commonHtmlUtils'; // Importer depuis utils
 
 // Type Union based on Response DTO classes
 type ApiVulnerabilityType = VulnerabilitySastDto | VulnerabilityIacDto | VulnerabilityScaDto;
 
-// --- Type Guards (spécifiques à la structure reçue dans cette vue) ---
+// --- Type Guards (specific to the structure received in this view) ---
 function isSastVulnerability(vuln: ApiVulnerabilityType): vuln is VulnerabilitySastDto {
     return vuln.vulnerability?.vulnerabilityType === 'sast' && 'dataFlowItems' in vuln;
 }
@@ -31,10 +34,10 @@ function isScaVulnerability(vuln: ApiVulnerabilityType): vuln is VulnerabilitySc
 // --- Helper Functions Specific to Details View ---
 
 function _generateHistoryHtml(historyItems: HistoryItemDto[] | undefined): string {
-     if (!historyItems || historyItems.length === 0) {
+    if (!historyItems || historyItems.length === 0) {
         return '<div class="section"><div class="section-title"><span class="codicon codicon-history"></span> History</div><div style="color: var(--vscode-descriptionForeground); padding-left: 5px;">No history items available.</div></div>';
     }
-     const itemsHtml = historyItems.map(item => `
+    const itemsHtml = historyItems.map(item => `
         <div class="history-item">
             <strong>${escape(item.type)}:</strong> ${escape(item.value)}
             <small>On ${new Date(item.date).toLocaleString()} ${item.user ? `by ${escape(item.user.firstName)} ${escape(item.user.lastName)}` : ''}</small>
@@ -65,9 +68,9 @@ function _generateCodeSnippetsHtml(codeSnippets: CodeSnippetDto[] | undefined): 
         <div class="code-snippet">
             <div class="snippet-header">Lines ${snippet.startLine} - ${snippet.endLine} (Vulnerable: ${snippet.vulnerableStartLine === snippet.vulnerableEndLine ? snippet.vulnerableStartLine : `${snippet.vulnerableStartLine} - ${snippet.vulnerableEndLine}`})</div>
             <pre class="code-block">${snippet.code.map(line => {
-                const isVulnerable = line.line >= snippet.vulnerableStartLine && line.line <= snippet.vulnerableEndLine;
-                return `<span class="line ${isVulnerable ? 'line-vulnerable' : ''}"><span class="line-number">${line.line}</span><span class="line-content">${escape(line.content)}</span></span>`;
-             }).join('\n')}</pre>
+        const isVulnerable = line.line >= snippet.vulnerableStartLine && line.line <= snippet.vulnerableEndLine;
+        return `<span class="line ${isVulnerable ? 'line-vulnerable' : ''}"><span class="line-number">${line.line}</span><span class="line-content">${escape(line.content)}</span></span>`;
+    }).join('\n')}</pre>
             ${snippet.fixAnalysis ? `<div class="fix-analysis"><strong>Fix Analysis:</strong> ${escape(snippet.fixAnalysis)}</div>` : ''}
             ${snippet.fixAnalysisDescription ? `<div class="fix-analysis-desc">${escape(snippet.fixAnalysisDescription)}</div>` : ''}
         </div>
@@ -76,10 +79,10 @@ function _generateCodeSnippetsHtml(codeSnippets: CodeSnippetDto[] | undefined): 
 }
 
 function _generateScaReferencesHtml(references: VulnerabilityScaReferenceDto[] | undefined): string {
-     if (!references || references.length === 0) {
+    if (!references || references.length === 0) {
         return '<div style="color: var(--vscode-descriptionForeground);">No references available.</div>';
     }
-     const refsHtml = references.map(ref => `
+    const refsHtml = references.map(ref => `
         <li><a href="${escape(ref.url)}" title="${escape(ref.url)}"><span class="codicon codicon-link"></span> ${escape(ref.type || 'Link')}</a></li>
     `).join('');
     return `<ul class="references-list">${refsHtml}</ul>`;
@@ -104,7 +107,7 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
     const severity = vulnerabilityObject.currentSeverity || 'UNKNOWN';
     const severityKey = severity.toUpperCase();
     const severityIconId = severityToIconMap[severityKey] || 'question';
-    const severityColor = severityColorMap[severityKey] || severityColorMap['UNKNOWN']
+    const severityColor = severityColorMap[severityKey] || severityColorMap['UNKNOWN'];
     const severityStyle = `color: ${severityColor}; font-weight: bold;`;
     const severityClass = getSeverityClass(vulnerabilityObject.currentSeverity);
     const currentVulnType = commonMetadata.vulnerabilityType as ScanType | undefined;
@@ -167,7 +170,7 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
                   <code>${escape(vulnerabilityObject.language || 'N/A')}</code>
              </div>
         `;
-         codeSnippetsHtml = `
+        codeSnippetsHtml = `
             <div class="section">
                  <div class="section-title"><span class="codicon codicon-code"></span> Code Snippet(s)</div>
                  ${_generateCodeSnippetsHtml(vulnerabilityObject.codeSnippets)}
@@ -204,7 +207,7 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
                 <div class="summary-content">${escape(scaMetadata.summary || 'N/A').replace(/\n/g, '<br>')}</div>
             </div>
         `;
-        codeSnippetsHtml = ''; // Pas de snippets pour SCA
+        codeSnippetsHtml = ''; // No snippets for SCA
     } else {
         specificDetailsHtml = `<div class="section"><div class="section-title">Details</div><div>Could not determine vulnerability type. Type: ${escape(commonMetadata.vulnerabilityType || 'Unknown')}</div></div>`;
     }
@@ -219,32 +222,31 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
         <link href="${codiconsUri}" rel="stylesheet" />
         <title>Vulnerability Detail</title>
         <style>
-            /* Importe les styles de base et la font-face Codicon */
+            /* Import base styles and Codicon font-face */
             ${getCodiconStyleSheet(codiconsFontUri)}
             
-            /* Styles pour les lettres de sévérité (copié/adapté depuis findingsHtml) */
+            /* Styles for severity letters (copied/adapted from findingsHtml) */
             .severity-icon {
                 flex-shrink: 0;
                 font-size: 0.9em;
-                width: 20px; /* Légèrement plus grand */
+                width: 20px; /* Slightly larger */
                 height: 20px;
                 text-align: center;
-                margin-right: 8px; /* Plus d'espace */
+                margin-right: 8px; /* More space */
                 font-weight: bold;
                 border-radius: 50%;
-                display: inline-flex; /* Aligner avec le titre */
+                display: inline-flex; /* Align with title */
                 align-items: center;
                 justify-content: center;
                 background-color: rgba(255, 255, 255, 0.08);
                 border: 1px solid currentColor;
                 vertical-align: middle;
                 position: relative;
-                top: -1px; /* Ajustement vertical fin */
+                top: -1px; /* Vertical adjustment */
             }
 
-            /* Couleurs de sévérité via variables CSS pour réutilisation */
+            /* Severity colors via CSS variables for reuse */
             :root {
-                /* CORRIGÉ: Utiliser severityColorMap au lieu de l'enum */
                 --severity-color-critical: ${severityColorMap['CRITICAL']};
                 --severity-color-high: ${severityColorMap['HIGH']};
                 --severity-color-medium: ${severityColorMap['MEDIUM']};
@@ -252,7 +254,7 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
                 --severity-color-info: ${severityColorMap['INFO']};
                 --severity-color-unknown: ${severityColorMap['UNKNOWN']};
                 
-                /* Variables de style globales */
+                /* Global style variables */
                 --detail-padding: 20px;
                 --section-spacing: 25px;
                 --section-border-color: var(--vscode-editorWidget-border, #444);
@@ -272,11 +274,11 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
                 color: var(--vscode-foreground); 
                 padding: var(--detail-padding); 
                 font-size: var(--vscode-font-size); 
-                line-height: 1.6; /* Améliorer lisibilité */
-                background-color: var(--vscode-editor-background); /* Fond éditeur */
+                line-height: 1.6; /* Improve readability */
+                background-color: var(--vscode-editor-background); /* Editor background */
             }
 
-            /* Titre principal */
+            /* Main title */
             h1 {
                 color: var(--vscode-editor-foreground);
                 padding-bottom: 15px;
@@ -285,22 +287,22 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
                 display: flex;
                 align-items: center;
                 gap: 10px;
-                border-bottom: 2px solid ${severityColor}; /* Couleur sévérité pour bordure */
-                font-weight: 600; /* Plus marqué */
+                border-bottom: 2px solid ${severityColor}; /* Severity color for border */
+                font-weight: 600; /* More marked */
             }
             h1 .codicon-shield { 
-                font-size: 1.2em; /* Icône plus grande */
-                color: ${severityColor}; /* Couleur sévérité */
+                font-size: 1.2em; /* Larger icon */
+                color: ${severityColor}; /* Severity color */
             }
 
-            /* Structure générale des sections */
+            /* General section structure */
             .section {
                 margin-bottom: var(--section-spacing);
-                padding: 0; /* Padding géré par le contenu */
-                background-color: transparent; /* Pas de fond par défaut */
+                padding: 0; /* Padding managed by content */
+                background-color: transparent; /* No default background */
                 border-radius: 6px;
-                border: none; /* Pas de bordure par défaut */
-                box-shadow: none; /* Pas d'ombre par défaut */
+                border: none; /* No default border */
+                box-shadow: none; /* No default shadow */
             }
             .section-title {
                 font-weight: 600;
@@ -312,26 +314,26 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
                 align-items: center;
                 gap: 8px;
                 border-bottom: 1px solid var(--section-border-color);
-                background-color: transparent; /* Pas de fond */
-                border-radius: 0; /* Pas de coins arrondis */
+                background-color: transparent; /* No background */
+                border-radius: 0; /* No rounded corners */
             }
             .section-title .codicon { 
                 font-size: 1.1em; 
-                color: rgb(120,69,255); /* Couleur accent */
+                color: rgb(120,69,255); /* Accent color */
             }
 
-            /* Grille d'infos (avec nouvelle structure) */
+            /* Info grid (with new structure) */
             .grid-container {
                 display: grid;
                 grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
                 gap: 15px;
-                padding: 15px; /* Padding à l'intérieur de la grille */
+                padding: 15px; /* Padding inside grid */
                 background-color: var(--grid-item-background);
                 border-radius: 6px;
                 border: 1px solid var(--grid-item-border-color);
             }
             
-            /* Ces styles ne sont plus nécessaires avec la nouvelle structure */
+            /* These styles are no longer necessary with the new structure */
             /* .grid-container.section {
                 margin-bottom: var(--section-spacing);
                 background-color: var(--grid-item-background);
@@ -566,11 +568,11 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
             <div class="section-title"><span class="codicon codicon-location"></span> Location</div>
             <div class="location">
                  ${filePath && filePath !== 'N/A' ?
-                    `<a class="location-link" href="#" data-command="openFile" title="Click to open file ${escape(filePath)}">
+            `<a class="location-link" href="#" data-command="openFile" title="Click to open file ${escape(filePath)}">
                         <span class="codicon codicon-file-code"></span> ${escape(filePath)}${lineNumber > 0 ? `:${lineNumber}` : ''}
                     </a>`
-                    : '<div style="color: var(--vscode-descriptionForeground); padding-left: 5px;">N/A</div>' // Message si pas de localisation
-                 }
+            : '<div style="color: var(--vscode-descriptionForeground); padding-left: 5px;">N/A</div>' // Message if no location
+        }
             </div>
         </div>
 
