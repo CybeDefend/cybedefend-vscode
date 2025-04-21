@@ -1,5 +1,5 @@
 const esbuild = require("esbuild");
-const fs = require('fs');
+const fs = require('fs-extra');
 const path = require('path');
 
 const production = process.argv.includes('--production');
@@ -26,29 +26,53 @@ const esbuildProblemMatcherPlugin = {
 /**
  * @type {import('esbuild').Plugin}
  */
-const copyCodiconsPlugin = {
-	name: 'copy-codicons-plugin',
+const copyAssetsPlugin = {
+	name: 'copy-assets-plugin',
 	setup(build) {
-		build.onEnd(() => {
-			// Ensure dist directory exists
-			if (!fs.existsSync('dist')) {
-				fs.mkdirSync('dist', { recursive: true });
+		build.onEnd(async () => {
+			const distDir = path.join(__dirname, 'dist');
+			if (!fs.existsSync(distDir)) {
+				fs.mkdirSync(distDir, { recursive: true });
 			}
-			
-			// Copy Codicons font file
-			const fontSrc = path.join(__dirname, 'node_modules', '@vscode', 'codicons', 'dist', 'codicon.ttf');
-			const fontDest = path.join(__dirname, 'dist', 'codicon.ttf');
-			
-			// Copy CSS file
-			const cssSrc = path.join(__dirname, 'node_modules', '@vscode', 'codicons', 'dist', 'codicon.css');
-			const cssDest = path.join(__dirname, 'dist', 'codicon.css');
-			
+
 			try {
+				const libsToCopy = [
+					{ src: path.join(__dirname, 'node_modules', 'marked', 'marked.min.js'), dest: path.join(distDir, 'libs', 'marked.min.js') },
+					{ src: path.join(__dirname, 'node_modules', 'dompurify', 'dist', 'purify.min.js'), dest: path.join(distDir, 'libs', 'purify.min.js') }
+				];
+				fs.ensureDirSync(path.join(distDir, 'libs'));
+
+				libsToCopy.forEach(lib => {
+					fs.copyFileSync(lib.src, lib.dest);
+					console.log(`[CopyAssetsPlugin] Copied library ${path.basename(lib.src)} to dist/libs.`);
+				});
+			} catch (error) {
+				console.error('✘ Error copying JS libraries:', error);
+			}
+
+			// --- Copy Codicons ---
+			try {
+				const fontSrc = path.join(__dirname, 'node_modules', '@vscode', 'codicons', 'dist', 'codicon.ttf');
+				const fontDest = path.join(distDir, 'codicon.ttf');
+				const cssSrc = path.join(__dirname, 'node_modules', '@vscode', 'codicons', 'dist', 'codicon.css');
+				const cssDest = path.join(distDir, 'codicon.css');
 				fs.copyFileSync(fontSrc, fontDest);
-				
 				fs.copyFileSync(cssSrc, cssDest);
+				console.log('[CopyAssetsPlugin] Copied Codicons files.');
 			} catch (error) {
 				console.error('✘ Error copying Codicons files:', error);
+			}
+
+			// --- Copy Webview Assets (HTML, CSS, JS) ---
+			try {
+				const assetsSrcDir = path.join(__dirname, 'src', 'ui', 'html', 'partials');
+				const assetsDestDir = path.join(distDir, 'ui', 'html', 'partials');
+
+				await fs.copy(assetsSrcDir, assetsDestDir);
+				console.log(`[CopyAssetsPlugin] Copied webview assets from ${assetsSrcDir} to ${assetsDestDir}.`);
+
+			} catch (error) {
+				console.error('✘ Error copying webview assets:', error);
 			}
 		});
 	}
@@ -56,9 +80,7 @@ const copyCodiconsPlugin = {
 
 async function main() {
 	const ctx = await esbuild.context({
-		entryPoints: [
-			'src/extension.ts'
-		],
+		entryPoints: ['src/extension.ts'],
 		bundle: true,
 		format: 'cjs',
 		minify: production,
@@ -70,7 +92,7 @@ async function main() {
 		logLevel: 'silent',
 		plugins: [
 			esbuildProblemMatcherPlugin,
-			copyCodiconsPlugin,
+			copyAssetsPlugin,
 		],
 	});
 	if (watch) {
@@ -85,3 +107,4 @@ main().catch(e => {
 	console.error(e);
 	process.exit(1);
 });
+

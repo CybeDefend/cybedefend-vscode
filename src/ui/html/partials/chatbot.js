@@ -312,7 +312,6 @@
      */
     function renderContextDisplay(selectedVulnId) {
         if (!contextDisplayDiv || !contextVulnNameSpan) {
-            console.error("Context display elements not found!");
             return;
         }
 

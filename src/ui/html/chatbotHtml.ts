@@ -84,21 +84,20 @@ export function getChatbotHtml(
 
         const { codiconsUri, codiconsFontUri } = getCommonAssetUris(webview, extensionUri);
 
-        // --- URIs pour les nouvelles bibliothèques JS ---
         const markedScriptUri = webview.asWebviewUri(
-            vscode.Uri.joinPath(extensionUri, 'node_modules', 'marked', 'marked.min.js') // Chemin vers marked
+            vscode.Uri.joinPath(extensionUri, 'dist', 'libs', 'marked.min.js')
         );
         const dompurifyScriptUri = webview.asWebviewUri(
-            vscode.Uri.joinPath(extensionUri, 'node_modules', 'dompurify', 'dist', 'purify.min.js') // Chemin vers dompurify
+            vscode.Uri.joinPath(extensionUri, 'dist', 'libs', 'purify.min.js')
         );
+
 
         // --- Define Paths to Partial Files ---
         // Assumes these files are relative to the extension's root directory
         // Adjust the path based on your actual project structure and build output
-        const baseDir = extensionUri.fsPath; // Use extensionUri for reliable pathing
-        const htmlTemplatePath = path.join(baseDir, 'src', 'ui', 'html', 'partials', 'chatbot.template.html');
-        const cssPath = path.join(baseDir, 'src', 'ui', 'html', 'partials', 'chatbot.css');
-        const jsPath = path.join(baseDir, 'src', 'ui', 'html', 'partials', 'chatbot.js');
+        const htmlTemplatePath = vscode.Uri.joinPath(extensionUri, 'dist', 'ui', 'html', 'partials', 'chatbot.template.html').fsPath;
+        const cssPath = vscode.Uri.joinPath(extensionUri, 'dist', 'ui', 'html', 'partials', 'chatbot.css').fsPath;
+        const jsPath = vscode.Uri.joinPath(extensionUri, 'dist', 'ui', 'html', 'partials', 'chatbot.js').fsPath;
 
         // --- Read File Contents ---
         let htmlTemplate = fs.readFileSync(htmlTemplatePath, 'utf8');
@@ -114,12 +113,13 @@ export function getChatbotHtml(
 
         // 2. Content Security Policy
         const cspPolicy = `
-        default-src 'none';
-        style-src ${webview.cspSource} 'unsafe-inline';
-        font-src ${webview.cspSource};
-        img-src ${webview.cspSource} https: data:;
-        script-src 'nonce-${nonce}' ${markedScriptUri} ${dompurifyScriptUri};
-    `.replace(/\s{2,}/g, ' ').trim();
+    default-src 'none';
+    style-src ${webview.cspSource} 'nonce-${nonce}';
+    font-src ${webview.cspSource};
+    img-src ${webview.cspSource} https: data:;
+    script-src 'nonce-${nonce}' ${markedScriptUri.toString()} ${dompurifyScriptUri.toString()};
+    connect-src https://api-preprod.cybedefend.com;
+`.replace(/\s{2,}/g, ' ').trim();
         // 3. Prepare Initial State JSON for JS injection
         //    (Same logic as before to prepare the state object)
         const initialVulnListForJs: VulnerabilityInfoForWebview[] = (state.vulnerabilities || [])
@@ -152,20 +152,8 @@ export function getChatbotHtml(
             projectId: state.projectId
         };
 
-        // Need to escape this JSON string for safe injection *into another string* (the JS code block)
-        // Specifically, escape characters that would break the JS string literal (' and \`)
-        // Also escape backslashes for correct JSON parsing within JS.
-        const initialStateJsonString = JSON.stringify(initialStateForJs)
-            .replace(/\\/g, '\\\\') // Escape backslashes
-            .replace(/'/g, "\\'")  // Escape single quotes
-            .replace(/`/g, "\\`"); // Escape backticks
-
-        // Prepare full vulnerabilities data JSON string for JS injection
-        const fullVulnerabilitiesDataJsonString = JSON.stringify(state.vulnerabilities || [])
-            .replace(/\\/g, '\\\\')
-            .replace(/'/g, "\\'")
-            .replace(/`/g, "\\`");
-
+        const initialStateJsonString = JSON.stringify(JSON.stringify(initialStateForJs));
+        const fullVulnerabilitiesDataJsonString = JSON.stringify(JSON.stringify(state.vulnerabilities || []));
 
         // --- Inject Data into HTML Template ---
         htmlTemplate = htmlTemplate
@@ -173,12 +161,10 @@ export function getChatbotHtml(
             .replace(/{{codiconsUri}}/g, codiconsUri.toString()) // Ensure URI is string
             .replace(/{{nonce}}/g, nonce)
             .replace(/{{styles}}/g, cssContent) // Inject all CSS
-            // Inject prepared JSON strings into placeholders within the <script> tag
-            .replace(`'{{initialStateJson}}'`, `'${initialStateJsonString}'`)
-            .replace(`'{{fullVulnerabilitiesDataJson}}'`, `'${fullVulnerabilitiesDataJsonString}'`)
-            // Inject scripts for Markdown parsing
             .replace(/{{markedScriptUri}}/g, markedScriptUri.toString())
             .replace(/{{dompurifyScriptUri}}/g, dompurifyScriptUri.toString())
+            .replace("'{{initialStateJson}}'", initialStateJsonString)
+            .replace("'{{fullVulnerabilitiesDataJson}}'", fullVulnerabilitiesDataJsonString)
             // Inject the main JS code
             .replace(/{{script}}/g, jsContent);
 

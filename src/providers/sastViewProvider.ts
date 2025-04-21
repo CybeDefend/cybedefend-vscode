@@ -21,7 +21,7 @@ export class SastViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     private _isLoading: boolean = false;
     private _error: string | null = null;
     private _projectId: string | null = null;
-    private _workspaceRoot: string | null = null; // NOUVEAU: Stocker la racine du workspace
+    private _workspaceRoot: string | null = null;
 
     /**
      * Creates an instance of SastViewProvider.
@@ -80,14 +80,12 @@ export class SastViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
                             // Action 2: Open File Location
                             if (typeof vulnData.path === 'string' && typeof vulnData.vulnerableStartLine === 'number') {
-                                const relativeFilePath = vulnData.path; // Chemin relatif du DTO
+                                const relativeFilePath = vulnData.path;
                                 const lineNumber = vulnData.vulnerableStartLine;
-                                const lineToShow = Math.max(1, lineNumber); // VS Code needs line >= 1
+                                const lineToShow = Math.max(1, lineNumber);
 
-                                // **MODIFIÉ**: Vérifier si workspaceRoot est disponible avant d'appeler la commande
                                 if (this._workspaceRoot) {
                                     console.log(`[${this.scanType}ViewProvider] Opening file. Root: ${this._workspaceRoot}, Relative: ${relativeFilePath}, Line: ${lineToShow}`);
-                                    // **MODIFIÉ**: Passer workspaceRoot comme premier argument
                                     vscode.commands.executeCommand(COMMAND_OPEN_FILE_LOCATION, this._workspaceRoot, relativeFilePath, lineToShow);
                                 } else {
                                     console.error(`[${this.scanType}ViewProvider] Cannot open file: Workspace root is not set.`);

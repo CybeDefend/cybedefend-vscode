@@ -11,6 +11,35 @@ import { getCodiconStyleSheet, getCommonAssetUris, getSeverityClass, severityCol
 const NO_FILE_KEY = '(File not specified)'; // Define constant for clarity
 
 /**
+ * Define weights for each severity level to calculate a criticality score.
+ */
+const severityWeights: { [key in VulnerabilitySeverityEnum | 'UNKNOWN']: number } = {
+    [VulnerabilitySeverityEnum.CRITICAL]: 100,
+    [VulnerabilitySeverityEnum.HIGH]: 50,
+    [VulnerabilitySeverityEnum.MEDIUM]: 20,
+    [VulnerabilitySeverityEnum.LOW]: 5,
+    [VulnerabilitySeverityEnum.INFO]: 1,
+    'UNKNOWN': 0 // Assign a weight for unknown severity
+};
+
+/**
+ * Calculates a criticality score for a list of vulnerabilities based on their severities.
+ * @param vulnerabilities - Array of vulnerability findings for a single file/group.
+ * @returns The calculated criticality score.
+ */
+function _calculateFileCriticalityScore(vulnerabilities: DetailedVulnerability[]): number {
+    let score = 0;
+    if (!vulnerabilities) {
+        return 0;
+    }
+    for (const vuln of vulnerabilities) {
+        const severity = vuln?.currentSeverity?.toUpperCase() as VulnerabilitySeverityEnum || 'UNKNOWN';
+        score += severityWeights[severity] || 0; // Add weight, default to 0 if severity is somehow invalid
+    }
+    return score;
+}
+
+/**
  * Groups findings by their file path.
  * @param findings - Array of vulnerability findings.
  * @returns Map where keys are file paths and values are arrays of findings for that file.
@@ -78,13 +107,26 @@ export function getFindingsViewHtml(
     if (findingsCount === 0) {
         findingsGroupHtml = '<p class="no-findings">No findings of this type were detected.</p>';
     } else {
-        // Sort groups alphabetically by file path key
-        const sortedGroups = Array.from(groupedFindings.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+        // 1. Calculate score for each group
+        const scoredGroups = Array.from(groupedFindings.entries()).map(([filePathKey, fileVulns]) => ({
+            filePathKey,
+            fileVulns,
+            score: _calculateFileCriticalityScore(fileVulns)
+        }));
 
-        sortedGroups.forEach(([filePathKey, fileVulns]) => {
+        // 2. Sort groups: primarily by score (descending), secondarily by file path (ascending)
+        scoredGroups.sort((a, b) => {
+            if (b.score !== a.score) {
+                return b.score - a.score; // Higher score comes first
+            }
+            // If scores are equal, sort alphabetically by file path for consistent ordering
+            return a.filePathKey.localeCompare(b.filePathKey);
+        });
+
+        // 3. Generate HTML from sorted groups
+        scoredGroups.forEach(({ filePathKey, fileVulns, score }) => { // Use destructured sorted data
             const fileVulnCount = fileVulns.length;
             const isUnspecifiedFile = filePathKey === NO_FILE_KEY;
-            // Use basename for display, keep full path in title/data
             const displayFileName = isUnspecifiedFile ? filePathKey : path.basename(filePathKey);
 
             const listItemsHtml = fileVulns.map(vuln => {
@@ -156,7 +198,7 @@ export function getFindingsViewHtml(
             // Use <details> for collapsibility, open few items by default
             findingsGroupHtml += `
                 <details class="file-group" ${findingsCount <= 15 ? 'open' : ''}>
-                    <summary class="file-summary" title="${escape(filePathKey)}">
+                    <summary class="file-summary" title="${escape(filePathKey)}\nScore: ${score}">
                         <span class="codicon codicon-chevron-right" aria-hidden="true"></span>
                         <span class="codicon file-icon ${isUnspecifiedFile ? 'codicon-question' : 'codicon-file-code'}" aria-hidden="true"></span>
                         <span class="file-name">${escape(displayFileName)}</span>
