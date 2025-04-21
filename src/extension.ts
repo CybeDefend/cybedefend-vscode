@@ -36,32 +36,32 @@ export async function activate(context: vscode.ExtensionContext) {
     const scaProvider = new ScaViewProvider(context);
     const chatbotProvider = new ChatbotViewProvider(context, apiService);
 
-    // --- Enregistrement des Disposables ---
+    // --- Register Disposables ---
     context.subscriptions.push(
         settingsProvider, detailsViewProvider, summaryProvider,
         sastProvider, iacProvider, scaProvider, chatbotProvider
     );
 
-    // --- Vérification initiale de la configuration ---
+    // --- Initial configuration check ---
     currentProjectConfig = await authService.ensureProjectConfigurationIsSet(apiService);
     if (!currentProjectConfig) {
-        console.warn("[CybeDefendScanner] Initial project configuration failed or cancelled.");
-        summaryProvider.updateConfiguration(null);
+        console.warn("[CybeDefendScanner] Initial project configuration failed or was cancelled.");
     } else {
          console.log(`[CybeDefendScanner] Config loaded: Org=${currentProjectConfig.organizationId}, Proj=${currentProjectConfig.projectId}`);
-         summaryProvider.updateConfiguration(currentProjectConfig);
     }
+    summaryProvider.updateConfiguration(currentProjectConfig);
+    chatbotProvider.updateConfiguration(currentProjectConfig);
 
-    // --- Listener Changements Workspace ---
+    // --- Listener for Workspace Changes ---
     context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(async () => {
         console.log("[CybeDefendScanner] Workspace folders changed, re-validating configuration...");
-        currentProjectConfig = await authService.ensureProjectConfigurationIsSet(apiService); // Revalider
+        currentProjectConfig = await authService.ensureProjectConfigurationIsSet(apiService);
         summaryProvider.updateConfiguration(currentProjectConfig);
+        chatbotProvider.updateConfiguration(currentProjectConfig);
         sastProvider.refresh(); iacProvider.refresh(); scaProvider.refresh();
-        chatbotProvider.resetConversationState();
     }));
 
-    // --- Enregistrement Webview Providers ---
+    // --- Register Webview Providers ---
     const viewProvidersToRegister = [
         { id: SummaryViewProvider.viewType, provider: summaryProvider },
         { id: SastViewProvider.viewType,    provider: sastProvider },
@@ -73,7 +73,7 @@ export async function activate(context: vscode.ExtensionContext) {
         context.subscriptions.push(vscode.window.registerWebviewViewProvider(id, provider as vscode.WebviewViewProvider));
     });
 
-    // --- Enregistrement des Commandes ---
+    // --- Register Commands ---
     context.subscriptions.push(
         vscode.commands.registerCommand(COMMAND_START_SCAN, async () => {
             if (!currentProjectConfig) {
@@ -87,6 +87,7 @@ export async function activate(context: vscode.ExtensionContext) {
                      context,
                      apiService,
                      summaryProvider, sastProvider, iacProvider, scaProvider,
+                     chatbotProvider,
                      currentProjectConfig.projectId,
                      currentProjectConfig.workspaceRoot
                  );

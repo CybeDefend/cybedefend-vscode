@@ -196,6 +196,7 @@ export class ApiService {
                  isVulnerabilityConversation: requestDto.isVulnerabilityConversation,
                  vulnerabilityId: requestDto.vulnerabilityId,
                  vulnerabilityType: requestDto.vulnerabilityType,
+                 projectId: projectId
             };
             const response = await this.axiosInstance.post<InitiateConversationResponse>(
                  `/project/${projectId}/ai/conversation/start`,
@@ -237,7 +238,6 @@ export class ApiService {
         }
     }
 
-    // --- NOUVELLES MÉTHODES API (inchangées par rapport à la réponse précédente) ---
     async getOrganizations(): Promise<OrganizationInformationsResponseDto[]> {
         const operation = 'getOrganizations';
         try {
@@ -335,7 +335,6 @@ export class ApiService {
         }
     }
 
-    // --- Gestionnaire d'erreurs (inchangé) ---
     private handleApiError(error: any, operation: string, contextInfo?: string): void {
         let userMessage = `Operation '${operation}' failed${contextInfo ? ` (${contextInfo})` : ''}.`;
         if (axios.isAxiosError(error)) {

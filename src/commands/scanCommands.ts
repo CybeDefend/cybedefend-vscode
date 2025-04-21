@@ -14,6 +14,7 @@ import { ScaViewProvider } from '../providers/scaViewProvider';
 import { createMockVulnerabilitiesResponse } from '../test/mocks/mockVulnerabilities'; // Ajuste le chemin si nécessaire
 import { DetailedVulnerability, IacVulnerabilityDetectionDto, SastVulnerabilityDetectionDto, ScaVulnerabilityWithCvssDto } from '../dtos/result/details';
 import { CountVulnerabilitiesCountByType, ScanProjectInfoDto } from '../dtos/result/response/get-project-vulnerabilities-response.dto';
+import { ChatbotViewProvider } from '../providers/chatbotViewProvider';
 
 const POLLING_INTERVAL_MS = 5000; // 5 seconds polling interval
 const MAX_POLLING_ATTEMPTS = 60; // 5 minutes timeout (60 * 5s)
@@ -44,6 +45,7 @@ export async function startScanCommand(
     sastProvider: SastViewProvider,
     iacProvider: IacViewProvider,
     scaProvider: ScaViewProvider,
+    chatbotProvider: ChatbotViewProvider,
     projectId: string,
     workspaceFolder: string
 ): Promise<void> {
@@ -162,6 +164,8 @@ export async function startScanCommand(
                  }
 
                  distributeFindingsToProviders(allVulnerabilities, sastProvider, iacProvider, scaProvider);
+                 console.log("[scanCommand] Scan complete. Refreshing chatbot vulnerability list.");
+                 chatbotProvider.refreshVulnerabilities();
                  vscode.window.showInformationMessage(`Scan complete. Found ${allVulnerabilities.length} total vulnerabilities.`);
 
             } catch (error: any) {

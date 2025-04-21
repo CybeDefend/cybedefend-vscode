@@ -54,7 +54,6 @@ export function getSummaryViewHtml(
             <div class="error-container">
                  ${errorIcon}
                  <h3>Scan Failed</h3>
-                 <p>${escape(summaryData.error)}</p>
             </div>
         `;
     } else if (summaryData.noWorkspace) {

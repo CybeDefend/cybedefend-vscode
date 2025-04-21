@@ -485,6 +485,51 @@ code:not(pre code) {
     /* Space after icon */
 }
 
+/* --- Styles pour l'affichage du contexte (À AJOUTER) --- */
+#context-display {
+    padding: 6px 10px;
+    background-color: var(--vscode-toolbar-hoverBackground); /* Couleur subtile */
+    color: var(--vscode-descriptionForeground);
+    border-radius: 4px;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--border-color);
+    flex-shrink: 0; /* Empêche de rétrécir */
+    transition: opacity 0.2s ease-in-out, max-height 0.2s ease-in-out, margin 0.2s ease-in-out, padding 0.2s ease-in-out, border 0.2s ease-in-out;
+    overflow: hidden;
+    max-height: 50px; /* Hauteur suffisante pour une ligne */
+    opacity: 1;
+    margin-top: -5px; /* Compenser un peu le gap du container principal */
+    margin-bottom: 5px; /* Espace avant les messages */
+}
+
+#context-display.hidden {
+    opacity: 0;
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-width: 0;
+    margin-top: -10px; /* Ajustement plus important quand caché */
+    margin-bottom: 0;
+    /* transform: scaleY(0); /* Peut causer des sauts, max-height est plus doux */
+}
+
+#context-display .codicon {
+    font-size: 1.1em;
+    flex-shrink: 0; /* Empêche l'icône de rétrécir */
+}
+
+#context-vuln-name {
+    font-weight: 600; /* Mettre en évidence le nom */
+    color: var(--vscode-editor-foreground); /* Texte un peu plus visible */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis; /* Gérer les noms longs */
+    flex-grow: 1; /* Prend l'espace restant */
+}
+
 /* --- Styles pour le Streaming --- */
 
 /* Style optionnel pour la bulle de message pendant le streaming (si besoin) */

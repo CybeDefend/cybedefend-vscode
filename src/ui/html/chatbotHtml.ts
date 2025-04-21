@@ -81,7 +81,16 @@ export function getChatbotHtml(
 ): string {
     try {
         const nonce = getNonce();
+        
         const { codiconsUri, codiconsFontUri } = getCommonAssetUris(webview, extensionUri);
+
+        // --- URIs pour les nouvelles bibliothèques JS ---
+        const markedScriptUri = webview.asWebviewUri(
+            vscode.Uri.joinPath(extensionUri, 'node_modules', 'marked', 'marked.min.js') // Chemin vers marked
+        );
+        const dompurifyScriptUri = webview.asWebviewUri(
+            vscode.Uri.joinPath(extensionUri, 'node_modules', 'dompurify', 'dist', 'purify.min.js') // Chemin vers dompurify
+        );
 
         // --- Define Paths to Partial Files ---
         // Assumes these files are relative to the extension's root directory
@@ -104,8 +113,13 @@ export function getChatbotHtml(
         cssContent = `${codiconsCss}\n\n${cssContent}`;
 
         // 2. Content Security Policy
-        const cspPolicy = `default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource}; img-src ${webview.cspSource} https: data:; script-src 'nonce-${nonce}';`;
-
+        const cspPolicy = `
+        default-src 'none';
+        style-src ${webview.cspSource} 'unsafe-inline';
+        font-src ${webview.cspSource};
+        img-src ${webview.cspSource} https: data:;
+        script-src 'nonce-${nonce}' ${markedScriptUri} ${dompurifyScriptUri};
+    `.replace(/\s{2,}/g, ' ').trim();
         // 3. Prepare Initial State JSON for JS injection
         //    (Same logic as before to prepare the state object)
         const initialVulnListForJs: VulnerabilityInfoForWebview[] = (state.vulnerabilities || [])

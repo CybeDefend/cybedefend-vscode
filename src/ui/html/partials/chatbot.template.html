@@ -26,13 +26,15 @@
             </select>
         </div>
 
+        <div id="context-display" class="hidden">
+             <span class="codicon codicon-info"></span> Discussing: <strong id="context-vuln-name"></strong>
+        </div>
         <div id="messages">
             <p style="text-align:center; color: var(--vscode-descriptionForeground);">Initializing chat...</p>
         </div>
 
         <div id="input-area">
-            <textarea id="message-input" rows="1" placeholder="Ask the Security Champion..." maxlength="512"></textarea>
-            <button id="send-button" title="Send Message" disabled>
+            <textarea id="message-input" rows="1" placeholder="Ask the Security Champion..." maxlength="1024"></textarea> <button id="send-button" title="Send Message" disabled>
                 <span class="codicon codicon-send"></span>
             </button>
         </div>
@@ -41,6 +43,7 @@
 
     <script type="module" nonce="{{nonce}}">
         // Pass initial state data from the extension to the script
+        // Ensure these placeholders are correctly replaced by chatbotHtml.ts
         const initialData = JSON.parse('{{initialStateJson}}');
         const initialFullVulnerabilities = JSON.parse('{{fullVulnerabilitiesDataJson}}');
 
