@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="Content-Security-Policy" content="{{cspPolicy}}">
@@ -8,14 +7,9 @@
     <link href="{{codiconsUri}}" rel="stylesheet" />
     <title>Security Champion</title>
     <style nonce="{{nonce}}">
-        {
-                {
-                styles
-            }
-        }
+        {{styles}}
     </style>
 </head>
-
 <body>
     <div id="chat-container">
         <div id="chat-header">
@@ -27,40 +21,31 @@
 
         <div id="vuln-selector" class="hidden">
             <h4><span class="codicon codicon-link"></span> Link Vulnerability (Optional)</h4>
-            <select id="vuln-select">Œ
+            <select id="vuln-select">
                 <option value="">Loading vulnerabilities...</option>
             </select>
         </div>
 
-        <div id="context-display" class="hidden">
-            <span class="codicon codicon-info"></span> Discussing: <strong id="context-vuln-name"></strong>
-        </div>
         <div id="messages">
             <p style="text-align:center; color: var(--vscode-descriptionForeground);">Initializing chat...</p>
         </div>
 
         <div id="input-area">
-            <textarea id="message-input" rows="1" placeholder="Ask the Security Champion..."
-                maxlength="1024"></textarea> <button id="send-button" title="Send Message" disabled>
+            <textarea id="message-input" rows="1" placeholder="Ask the Security Champion..." maxlength="512"></textarea>
+            <button id="send-button" title="Send Message" disabled>
                 <span class="codicon codicon-send"></span>
             </button>
         </div>
 
     </div>
 
-    <!-- Load Markdown parsing libraries -->
-    <script src="{{markedScriptUri}}" nonce="{{nonce}}"></script>
-    <script src="{{dompurifyScriptUri}}" nonce="{{nonce}}"></script>
-
     <script type="module" nonce="{{nonce}}">
         // Pass initial state data from the extension to the script
-        // Ensure these placeholders are correctly replaced by chatbotHtml.ts
         const initialData = JSON.parse('{{initialStateJson}}');
         const initialFullVulnerabilities = JSON.parse('{{fullVulnerabilitiesDataJson}}');
 
         // Embed the main script logic
-        { { script } }
+        {{script}}
     </script>
 </body>
-
 </html>

@@ -9,8 +9,8 @@ import { AddMessageConversationRequestDto } from '../dtos/ai/request/add-message
 import { StartConversationRequestDto } from '../dtos/ai/request/start-conversation-request.dto';
 import { MessageDto } from '../dtos/ai/response/message.dto';
 import { DetailedVulnerability } from '../dtos/result/details';
-import { getChatbotHtml, ProviderState as HtmlProviderState, VulnerabilityInfoForWebview } from '../ui/html/chatbotHtml'; // Import ProviderState type used by HTML generator
-import { getApiBaseUrl } from '../utilities/config'; // Removed getProjectId import
+import { getChatbotHtml, ProviderState as HtmlProviderState, VulnerabilityInfoForWebview } from '../ui/html/chatbotHtml';
+import { getApiBaseUrl } from '../utilities/config';
 
 // --- Interfaces ---
 interface WebviewCommand { command: string; text?: string; vulnerability?: DetailedVulnerability | null; vulnerabilityId?: string | null; }
@@ -387,7 +387,7 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
                 ...(sastResults?.vulnerabilities || []),
                 ...(iacResults?.vulnerabilities || []),
                 ...(scaResults?.vulnerabilities || [])
-            ].filter(v => v != null); // Filter nulls
+            ].filter(v => v !== null); // Filter nulls
             console.log(`[ChatbotViewProvider] Loaded ${combined.length} SAST/IaC/SCA vulnerabilities.`);
             this._state.vulnerabilities = combined;
             this._state.error = null;
