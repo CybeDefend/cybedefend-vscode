@@ -3,6 +3,10 @@
   "displayName": "cybedefend-vscode",
   "description": "Seamlessly integrates CybeDefend into VSCode, enabling real-time vulnerability scanning of your codebase. Authenticate via API key, auto-install the CLI, and visualize detected issues with severity-based filtering and detailed insights",
   "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CybeDefend/cybedefend-vscode.git"
+  },
   "engines": {
     "vscode": "^1.98.2"
   },
