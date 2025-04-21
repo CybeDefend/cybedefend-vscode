@@ -1,8 +1,10 @@
 {
   "name": "cybedefend-vscode",
-  "displayName": "cybedefend-vscode",
-  "description": "Seamlessly integrates CybeDefend into VSCode, enabling real-time vulnerability scanning of your codebase. Authenticate via API key, auto-install the CLI, and visualize detected issues with severity-based filtering and detailed insights",
+  "displayName": "CybeDefend",
+  "icon": "public/icon.png",
+  "description": "Seamlessly integrates CybeDefend into VSCode, enabling real-time vulnerability scanning of your codebase. Authenticate via API key, auto-detect your project, and visualize detected issues with severity-based filtering and detailed insights with the Security Champion",
   "version": "0.0.1",
+  "publisher": "CybeDefend",
   "repository": {
     "type": "git",
     "url": "https://github.com/CybeDefend/cybedefend-vscode.git"
@@ -31,8 +33,7 @@
           "cybedefendScanner.projectId": {
             "type": "string",
             "default": "",
-            "description": "[DEPRECATED - Use Workspace Setting] The Project ID to use for scans. This setting is for legacy purposes; the extension now prompts and stores the ID per workspace.",
-            "deprecationMessage": "Project ID is now managed per workspace via prompts. Use the 'Update Project ID (Current Workspace)' command instead."
+            "description": "Project Id is automatically set per workspace in function of the folder name in your git config"
           }
         }
       }
