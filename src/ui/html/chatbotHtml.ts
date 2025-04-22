@@ -166,8 +166,8 @@ export function getChatbotHtml(
             .replace(/{{dompurifyScriptUri}}/g, dompurifyScriptUri.toString())
             .replace("'{{initialStateJson}}'", initialStateJsonString)
             .replace("'{{fullVulnerabilitiesDataJson}}'", fullVulnerabilitiesDataJsonString)
-            // Inject the main JS code content directly
-            .replace('{{script}}', jsContent); // Reverted to direct content injection
+            // Inject the main JS code
+            .replace(/{{script}}/g, jsContent);
 
         return htmlTemplate;
 
