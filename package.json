@@ -3,7 +3,7 @@
   "displayName": "CybeDefend",
   "icon": "public/icon.png",
   "description": "Seamlessly integrates CybeDefend into VSCode, enabling real-time vulnerability scanning of your codebase. Authenticate via API key, auto-detect your project, and visualize detected issues with severity-based filtering and detailed insights with the Security Champion",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "CybeDefend",
   "repository": {
     "type": "git",

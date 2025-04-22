@@ -84,13 +84,13 @@ export function getChatbotHtml(
 
         const { codiconsUri, codiconsFontUri } = getCommonAssetUris(webview, extensionUri);
 
+        // Get URIs for external libraries, ensuring they use the webview's scheme
         const markedScriptUri = webview.asWebviewUri(
             vscode.Uri.joinPath(extensionUri, 'dist', 'libs', 'marked.min.js')
         );
         const dompurifyScriptUri = webview.asWebviewUri(
             vscode.Uri.joinPath(extensionUri, 'dist', 'libs', 'purify.min.js')
         );
-
 
         // --- Define Paths to Partial Files ---
         // Assumes these files are relative to the extension's root directory
@@ -111,15 +111,16 @@ export function getChatbotHtml(
         // Inject codicon font styles into the main CSS content
         cssContent = `${codiconsCss}\n\n${cssContent}`;
 
-        // 2. Content Security Policy
+        // 2. Content Security Policy - CORRECTED (using unsafe-inline for styles temporarily, nonce removed from style-src)
         const cspPolicy = `
     default-src 'none';
-    style-src ${webview.cspSource} 'nonce-${nonce}';
+    style-src ${webview.cspSource} 'unsafe-inline';
     font-src ${webview.cspSource};
     img-src ${webview.cspSource} https: data:;
-    script-src 'nonce-${nonce}' ${markedScriptUri.toString()} ${dompurifyScriptUri.toString()};
+    script-src 'nonce-${nonce}' ${webview.cspSource};
     connect-src https://api-preprod.cybedefend.com;
-`.replace(/\s{2,}/g, ' ').trim();
+`.replace(/\s{2,}/g, ' ').trim(); // Keep connect-src as it was
+
         // 3. Prepare Initial State JSON for JS injection
         //    (Same logic as before to prepare the state object)
         const initialVulnListForJs: VulnerabilityInfoForWebview[] = (state.vulnerabilities || [])
@@ -165,8 +166,8 @@ export function getChatbotHtml(
             .replace(/{{dompurifyScriptUri}}/g, dompurifyScriptUri.toString())
             .replace("'{{initialStateJson}}'", initialStateJsonString)
             .replace("'{{fullVulnerabilitiesDataJson}}'", fullVulnerabilitiesDataJsonString)
-            // Inject the main JS code
-            .replace(/{{script}}/g, jsContent);
+            // Inject the main JS code content directly
+            .replace('{{script}}', jsContent); // Reverted to direct content injection
 
         return htmlTemplate;
 

@@ -5,47 +5,58 @@
     <meta http-equiv="Content-Security-Policy" content="{{cspPolicy}}">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="{{codiconsUri}}" rel="stylesheet" />
-    <title>Security Champion</title>
+    <title>CybeDefend Security Champion</title>
     <style nonce="{{nonce}}">
         {{styles}}
     </style>
 </head>
 <body>
-    <div id="chat-container">
-        <div id="chat-header">
-            <h3>Security Champion</h3>
-            <button id="reset-button" title="New Conversation">
+    <div id="chatbot-container">
+        <div id="header-controls">
+            <!-- Vulnerability Selector -->
+            <div id="vuln-selector" class="hidden">
+                <label for="vuln-select" class="sr-only">Select Vulnerability Context:</label>
+                <select id="vuln-select" title="Select a vulnerability to discuss (Optional)">
+                    <option value="">Select vulnerability (Optional)...</option>
+                </select>
+            </div>
+            <button id="reset-button" class="control-button" title="Reset Conversation">
                 <span class="codicon codicon-refresh"></span>
             </button>
         </div>
 
-        <div id="vuln-selector" class="hidden">
-            <h4><span class="codicon codicon-link"></span> Link Vulnerability (Optional)</h4>
-            <select id="vuln-select">
-                <option value="">Loading vulnerabilities...</option>
-            </select>
+        <!-- Vulnerability Context Display -->
+        <div id="context-display" class="hidden" title="Current vulnerability context">
+            <span class="codicon codicon-info"></span>
+            Context: <span id="context-vuln-name"></span>
         </div>
 
         <div id="messages">
-            <p style="text-align:center; color: var(--vscode-descriptionForeground);">Initializing chat...</p>
+            <p class="empty-chat-message">Initializing chat...</p>
         </div>
 
         <div id="input-area">
-            <textarea id="message-input" rows="1" placeholder="Ask the Security Champion..." maxlength="512"></textarea>
-            <button id="send-button" title="Send Message" disabled>
+            <textarea id="message-input" placeholder="Ask the Security Champion..." rows="1"></textarea>
+            <button id="send-button" class="control-button" title="Send Message" disabled>
                 <span class="codicon codicon-send"></span>
             </button>
         </div>
-
     </div>
 
-    <script type="module" nonce="{{nonce}}">
-        // Pass initial state data from the extension to the script
+    <!-- Initial state data passed from provider to webview JS -->
+    <script nonce="{{nonce}}">
         const initialData = JSON.parse('{{initialStateJson}}');
         const initialFullVulnerabilities = JSON.parse('{{fullVulnerabilitiesDataJson}}');
+    </script>
 
-        // Embed the main script logic
+    <!-- Libraries - Removed nonce -->
+    <script src="{{markedScriptUri}}"></script>
+    <script src="{{dompurifyScriptUri}}"></script>
+
+    <!-- Main application script (content injected by chatbotHtml.ts) -->
+    <script nonce="{{nonce}}">
         {{script}}
     </script>
+
 </body>
 </html>

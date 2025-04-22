@@ -361,7 +361,12 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
             this._state.isLoading = false; // Ensure isLoading is also disabled at the end
             this._state.assistantStreamContent = ""; // Clear buffer
 
-            this._notifyWebviewState(); // Notify final state
+            // GUARD: Check view existence before final notification
+            if (this._view) {
+                this._notifyWebviewState(); // Notify final state
+            } else {
+                console.log("[ChatbotViewProvider] SSE 'finally': View not available for final state notification.");
+            }
             console.log("[ChatbotViewProvider] SSE stream processing finished.");
         }
     }
@@ -460,7 +465,10 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
     }
 
     private _notifyWebviewState() {
-        if (!this._view?.webview) { return; }
+        if (!this._view?.webview) {
+            console.log("[ChatbotViewProvider] _notifyWebviewState skipped: View not available.");
+            return; // GUARD: Do nothing if the view is gone
+        }
         const currentState = this._state;
         const simplifiedVulns = this._prepareVulnerabilitiesForWebview(currentState.vulnerabilities);
 

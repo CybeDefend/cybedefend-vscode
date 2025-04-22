@@ -6,7 +6,15 @@ All notable changes to the "cybedefend-vscode" extension will be documented in t
 
 *Work in progress for the next release.*
 
-## [0.0.1] - YYYY-MM-DD
+## [0.0.2] - YYYY-MM-DD
+
+### Added
+- Vulnerability Views (SAST, IaC, SCA): Files are now sorted by criticality score (based on severity and count of vulnerabilities) in descending order, showing the most critical files first.
+
+### Fixed
+- Chatbot: Resolved an issue preventing Markdown formatting from being correctly rendered in AI responses.
+
+## [0.0.1] - 2025-04-02
 
 ### Added
 - Initial alpha release of the CybeDefend VS Code Extension.
