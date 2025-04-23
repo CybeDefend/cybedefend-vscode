@@ -193,7 +193,8 @@ export class ApiService {
                 isVulnerabilityConversation: requestDto.isVulnerabilityConversation,
                 vulnerabilityId: requestDto.vulnerabilityId,
                 vulnerabilityType: requestDto.vulnerabilityType,
-                projectId: projectId
+                projectId: projectId,
+                language: "en"
             };
             const response = await this.axiosInstance.post<InitiateConversationResponse>(
                 `/project/${projectId}/ai/conversation/start`,
