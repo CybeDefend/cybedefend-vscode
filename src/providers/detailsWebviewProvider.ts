@@ -2,6 +2,7 @@
 import * as vscode from 'vscode';
 // MODIFIÉ: Importer depuis le nouveau chemin '/ui/html' (via index.ts)
 import { COMMAND_OPEN_FILE_LOCATION } from '../constants/constants';
+import { ScanType } from '../api/apiService'; // Import ScanType
 import { GetProjectVulnerabilityByIdResponseDto } from '../dtos/result/response/get-project-vulnerability-by-id-response.dto';
 import { getDetailsWebviewHtml } from '../ui/html';
 import { getNonce } from '../utilities/utils'; // Ajuste le chemin si nécessaire
@@ -18,6 +19,7 @@ export class DetailsWebviewViewProvider implements vscode.Disposable {
     private _currentData?: GetProjectVulnerabilityByIdResponseDto;
     private readonly _extensionUri: vscode.Uri;
     private _disposables: vscode.Disposable[] = [];
+    private _workspaceRoot?: string; // Added to store workspace root
 
     constructor(private readonly context: vscode.ExtensionContext) {
         this._extensionUri = context.extensionUri;
@@ -53,10 +55,29 @@ export class DetailsWebviewViewProvider implements vscode.Disposable {
         this._panel.webview.onDidReceiveMessage(data => {
             switch (data.command) {
                 case 'triggerOpenFile':
-                    if (data.filePath && typeof data.lineNumber === 'number') {
-                        vscode.commands.executeCommand(COMMAND_OPEN_FILE_LOCATION, data.filePath, data.lineNumber);
+                    // Define the expected type for the message data for clarity
+                    type TriggerOpenFileMessage = {
+                        command: 'triggerOpenFile';
+                        workspaceRoot?: string;
+                        filePath?: string;
+                        lineNumber?: number;
+                        vulnerabilityType?: ScanType;
+                    };
+
+                    const messageData = data as TriggerOpenFileMessage;
+                    // Check if all required data is present
+                    if (messageData.workspaceRoot && messageData.filePath && typeof messageData.lineNumber === 'number') {
+                        // Execute the command with workspaceRoot, filePath, lineNumber, AND vulnerabilityType
+                        vscode.commands.executeCommand(
+                            COMMAND_OPEN_FILE_LOCATION,
+                            messageData.workspaceRoot,
+                            messageData.filePath,
+                            messageData.lineNumber,
+                            messageData.vulnerabilityType // Pass the type
+                        );
                     } else {
                         console.warn("Invalid data received for triggerOpenFile:", data);
+                        vscode.window.showErrorMessage("Could not open file: Missing required information (workspace path, file path, or line number).");
                     }
                     return;
             }
@@ -74,8 +95,9 @@ export class DetailsWebviewViewProvider implements vscode.Disposable {
      * Updates the content of the panel with new vulnerability data.
      * Creates the panel if it doesn't exist yet.
      */
-    public updateContent(response: GetProjectVulnerabilityByIdResponseDto | undefined) {
+    public updateContent(response: GetProjectVulnerabilityByIdResponseDto | undefined, workspaceRoot: string | undefined) {
         this._currentData = response;
+        this._workspaceRoot = workspaceRoot; // Store the workspace root
 
         // Creates or shows the panel
         this.showPanel();
@@ -94,7 +116,8 @@ export class DetailsWebviewViewProvider implements vscode.Disposable {
     private _getHtmlForWebview(webview: vscode.Webview): string {
         if (this._currentData) {
             // Use the external function (now imported from ui/html) to generate detailed HTML
-            return getDetailsWebviewHtml(this._currentData, webview, this._extensionUri);
+            // Pass the stored workspaceRoot to the HTML generator
+            return getDetailsWebviewHtml(this._currentData, webview, this._extensionUri, this._workspaceRoot);
         } else {
             // Default HTML when _currentData is undefined
             const nonce = getNonce();

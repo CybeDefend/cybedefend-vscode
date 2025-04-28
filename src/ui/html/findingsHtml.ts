@@ -103,9 +103,57 @@ export function getFindingsViewHtml(
     const findingsCount = findings?.length ?? 0;
     const groupedFindings = _groupFindingsByFile(findings);
     let findingsGroupHtml = '';
+    let allFindingsHtml = ''; // Added for direct SCA list
 
     if (findingsCount === 0) {
         findingsGroupHtml = '<p class="no-findings">No findings of this type were detected.</p>';
+    } else if (scanType === 'sca') {
+        // --- SCA: Display all findings directly without grouping --- 
+        const listItemsHtml = findings.map(vuln => {
+            if (!vuln?.vulnerability) { return ''; }
+
+            const severity = vuln.currentSeverity?.toUpperCase() as VulnerabilitySeverityEnum || VulnerabilitySeverityEnum.UNKNOWN;
+            const iconId = severityToIconMap[severity] || severityToIconMap.UNKNOWN;
+            const severityClass = getSeverityClass(severity);
+            const severityColor = severityColorMap[severity] || severityColorMap.UNKNOWN;
+            const severityStyle = `color: ${severityColor}; font-weight: bold;`;
+
+            const meta = vuln.vulnerability;
+            const title = escape(meta.name || vuln.id); // Use ID as fallback title
+
+            const scaVuln = vuln as ScaVulnerabilityWithCvssDto;
+            const pkg = scaVuln.scaDetectedPackage;
+            const locationText = pkg ? `${escape(pkg.packageName || '?')}@${escape(pkg.packageVersion || '?')}` : 'Package N/A';
+            const manifestFile = pkg?.fileName || NO_FILE_KEY;
+
+            const locationHtml = `<span class="finding-location" title="Found in: ${escape(manifestFile)}">${locationText}</span>`;
+
+            let vulnDataString = '';
+            try {
+                vulnDataString = escape(JSON.stringify(vuln));
+            } catch (e) {
+                console.error("Failed to stringify finding data:", e, vuln.id);
+                vulnDataString = escape(JSON.stringify({ id: vuln.id, error: 'Data too complex or circular' }));
+            }
+            return `
+                <li class="finding-item ${severityClass}"
+                    data-vulnerability='${vulnDataString}'
+                    data-scan-type='${scanType}'
+                    title="${escape(vuln.id)} - Click for details and location"
+                    tabindex="0"
+                    role="button"
+                    aria-label="Vulnerability: ${title}, Severity: ${severity}, Package: ${locationText}. Press Enter or Space to view details and location.">
+                    <span class="codicon codicon-${iconId} severity-icon" style="${severityStyle}" aria-hidden="true"></span>
+                    <div class="finding-content">
+                        <span class="finding-title">${title}</span>
+                        ${locationHtml}
+                    </div>
+                </li>`;
+        }).join('');
+
+        // Wrap the direct list in a simple container
+        allFindingsHtml = `<ul class="findings-list-direct">${listItemsHtml}</ul>`;
+
     } else {
         // 1. Calculate score for each group
         const scoredGroups = Array.from(groupedFindings.entries()).map(([filePathKey, fileVulns]) => ({
@@ -212,6 +260,9 @@ export function getFindingsViewHtml(
         });
     }
 
+    // Determine which HTML block to use
+    const finalHtmlContent = scanType === 'sca' ? allFindingsHtml : findingsGroupHtml;
+
     // --- Complete HTML with Styles and Script ---
     return `<!DOCTYPE html>
     <html lang="en">
@@ -226,7 +277,7 @@ export function getFindingsViewHtml(
         ">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <link href="${codiconsUri}" rel="stylesheet" />
-        <title>${scanType.toUpperCase()} Findings</title>
+        <title>${scanType.toUpperCase()} Findings (${findingsCount})</title>
         <style>
             ${getCodiconStyleSheet(codiconsFontUri)}
 
@@ -240,6 +291,7 @@ export function getFindingsViewHtml(
                 --file-group-border: 1px solid var(--vscode-tree-tableColumnsBorderColor, var(--vscode-editorGroup-border));
                 --file-summary-bg: rgba(var(--vscode-button-secondaryBackground-rgb), 0.1); /* Subtle background */
                 --file-summary-hover-bg: var(--vscode-list-hoverBackground);
+                --list-padding: 10px;
             }
 
             body {
@@ -326,13 +378,85 @@ export function getFindingsViewHtml(
             .finding-location { font-size: 0.9em; color: var(--vscode-descriptionForeground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
             p.no-findings { padding: 20px; text-align: center; color: var(--vscode-descriptionForeground); font-style: italic; }
+
+            /* Styling for the direct SCA list */
+            .findings-list-direct {
+                list-style: none;
+                padding: 0 var(--list-padding);
+                margin: 0;
+            }
+
+            /* Shared styles for finding items (used in both grouped and direct lists) */
+            .finding-item {
+                display: flex;
+                align-items: center;
+                padding: 8px var(--list-padding);
+                margin-bottom: 2px; /* Small gap between items */
+                border-radius: 4px;
+                cursor: pointer;
+                border-left: 3px solid transparent; /* For severity indication */
+                transition: background-color 0.1s ease, border-left-color 0.1s ease;
+                overflow: hidden; /* Prevent content overflow */
+            }
+
+            .finding-item:hover {
+                background-color: var(--vscode-list-hoverBackground);
+            }
+
+            .finding-item:focus {
+                outline: 1px solid var(--vscode-focusBorder);
+                outline-offset: -1px;
+                background-color: var(--vscode-list-focusBackground);
+            }
+
+            /* Apply severity color to the left border */
+            .finding-item.critical { border-left-color: var(--severity-color-critical); }
+            .finding-item.high { border-left-color: var(--severity-color-high); }
+            .finding-item.medium { border-left-color: var(--severity-color-medium); }
+            .finding-item.low { border-left-color: var(--severity-color-low); }
+            .finding-item.info { border-left-color: var(--severity-color-info); }
+            .finding-item.unknown { border-left-color: var(--severity-color-unknown); }
+
+            .severity-icon {
+                flex-shrink: 0;
+                font-size: 1.1em; /* Slightly larger icon */
+                width: 20px;
+                text-align: center;
+                margin-right: 10px;
+                opacity: 0.9;
+            }
+
+            .finding-content {
+                flex-grow: 1;
+                overflow: hidden; /* Prevent long titles from breaking layout */
+                line-height: 1.4;
+            }
+
+            .finding-title {
+                display: block;
+                font-weight: 500;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                color: var(--vscode-list-activeSelectionForeground);
+                margin-bottom: 2px; /* Space between title and location */
+            }
+
+            .finding-location {
+                display: block;
+                font-size: 0.9em;
+                color: var(--vscode-descriptionForeground);
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
         </style>
     </head>
     <body>
         <div class="findings-header">
             ${findingsCount} ${scanType.toUpperCase()} Finding${findingsCount !== 1 ? 's' : ''}
         </div>
-        ${findingsGroupHtml}
+        ${finalHtmlContent}
 
         <script nonce="${nonce}">
             // Get VS Code API handle (works in webviews)

@@ -18,6 +18,12 @@ interface QuickPickItemWithData<T> extends vscode.QuickPickItem {
     data: T;
 }
 
+// Define a type for the QuickPick item, which can hold project data or a special marker for creation
+type ProjectQuickPickItem = QuickPickItemWithData<ProjectAllInformationsResponseDto> | vscode.QuickPickItem;
+
+// Define a constant for the 'Create New Project' label
+const CREATE_NEW_PROJECT_LABEL = '$(add) Create New Project...';
+
 export class AuthService {
     constructor(
         private readonly context: vscode.ExtensionContext,
@@ -105,8 +111,6 @@ export class AuthService {
             return undefined;
         }
     }
-
-
 
     /**
      * Orchestrates the enhanced configuration flow:
@@ -299,42 +303,57 @@ export class AuthService {
     }
 
     /**
-     * Fallback method (OPTION B): Lists projects in the organization for user selection.
+     * Fallback method (OPTION B): Lists projects in the organization for user selection,
+     * OR allows the user to initiate project creation.
      * If selection fails or no projects exist, falls back to manual input.
      */
     private async fallbackToListProjects(apiKey: string, organizationId: string, workspaceRoot: string, apiServiceInstance: ApiService): Promise<ProjectConfig | null> {
-        console.log('[AuthService] Entering Option B: Listing projects...');
+        console.log('[AuthService] Entering Option B: Listing projects or creating new...');
         vscode.window.showInformationMessage(`CybeDefend: Searching for projects in the organization...`);
         try {
             // Get the first page (up to 100 projects)
             const projectData = await apiServiceInstance.getProjectsOrganization(organizationId, 100);
 
-            if (!projectData || projectData.projects.length === 0) {
-                vscode.window.showWarningMessage('No projects found in this organization. Please enter the project ID manually.');
-                return await this.fallbackToManualInput(apiKey, workspaceRoot, organizationId); // Proceed to manual input
-            }
-
-            const projectItems = projectData.projects.map(p => ({
+            // Prepare the list of existing projects for the Quick Pick
+            const projectItems: QuickPickItemWithData<ProjectAllInformationsResponseDto>[] = (projectData?.projects || []).map(p => ({
                 label: p.name,
                 description: `Team: ${p.teamName} | ID: ${p.projectId}`,
                 data: p
-            } as QuickPickItemWithData<ProjectAllInformationsResponseDto>));
+            }));
 
-            const selection = await vscode.window.showQuickPick(projectItems, {
-                title: 'Select an Existing Project',
-                placeHolder: 'Choose the CybeDefend project for this workspace',
+            // Add the "Create New Project" option at the beginning of the list
+            const quickPickItems: ProjectQuickPickItem[] = [
+                { label: CREATE_NEW_PROJECT_LABEL, description: 'Create a new CybeDefend project for this workspace' },
+                ...projectItems
+            ];
+
+            // Show the Quick Pick with existing projects and the creation option
+            const selection = await vscode.window.showQuickPick(quickPickItems, {
+                title: 'Select or Create Project', // Updated title
+                placeHolder: 'Choose an existing project or create a new one', // Updated placeholder
                 ignoreFocusOut: true,
                 matchOnDescription: true // Allows searching by ID also
             });
 
+            // Handle the user's selection
             if (selection) {
-                const selectedProjectId = selection.data.projectId;
-                await this.setWorkspaceProjectId(workspaceRoot, selectedProjectId);
-                vscode.window.showInformationMessage(`Project "${selection.data.name}" selected.`);
-                console.log(`[AuthService] Success: User selected project ID: ${selectedProjectId}`);
-                return { apiKey, projectId: selectedProjectId, workspaceRoot, organizationId }; // FINAL STEP B
+                // Check if the "Create New Project" option was selected
+                if (selection.label === CREATE_NEW_PROJECT_LABEL) {
+                    console.log('[AuthService] User selected "Create New Project".');
+                    // Call the helper function to handle the creation process
+                    return await this.handleCreateNewProjectFromQuickPick(apiKey, organizationId, workspaceRoot, apiServiceInstance);
+                } else {
+                    // An existing project was selected (cast needed because it's QuickPickItemWithData)
+                    const selectedProject = selection as QuickPickItemWithData<ProjectAllInformationsResponseDto>;
+                    const selectedProjectId = selectedProject.data.projectId;
+                    await this.setWorkspaceProjectId(workspaceRoot, selectedProjectId);
+                    vscode.window.showInformationMessage(`Project "${selectedProject.data.name}" selected.`);
+                    console.log(`[AuthService] Success: User selected existing project ID: ${selectedProjectId}`);
+                    return { apiKey, projectId: selectedProjectId, workspaceRoot, organizationId }; // FINAL STEP B (Select existing)
+                }
             } else {
-                vscode.window.showWarningMessage('Project selection cancelled.');
+                // User cancelled the Quick Pick
+                vscode.window.showWarningMessage('Project selection/creation cancelled.');
                 return null; // Cancelled by the user
             }
 
@@ -342,6 +361,80 @@ export class AuthService {
             vscode.window.showErrorMessage(`Error retrieving projects: ${error.message}. Proceeding to manual input.`);
             // Error API GetProjects -> Proceed to manual input
             return await this.fallbackToManualInput(apiKey, workspaceRoot, organizationId);
+        }
+    }
+
+    /**
+     * Handles the process of creating a new project initiated from the quick pick menu.
+     * Prompts for team and project name, creates the project via API, and saves the config.
+     * @returns The ProjectConfig if successful, otherwise null.
+     */
+    private async handleCreateNewProjectFromQuickPick(apiKey: string, organizationId: string, workspaceRoot: string, apiServiceInstance: ApiService): Promise<ProjectConfig | null> {
+        console.log('[AuthService] Initiating new project creation flow...');
+        try {
+            // 1. Select Team for the new project
+            let selectedTeam: TeamInformationsResponseDto | undefined;
+            try {
+                const teams = await apiServiceInstance.getTeams(organizationId);
+                if (!teams || teams.length === 0) { throw new Error("No teams found in the organization. Cannot create a project."); }
+
+                if (teams.length === 1) {
+                    selectedTeam = teams[0];
+                    vscode.window.showInformationMessage(`Team "${selectedTeam.name}" automatically selected for the new project.`);
+                } else {
+                    const teamItems = teams.map(t => ({ label: t.name, description: t.description, data: t } as QuickPickItemWithData<TeamInformationsResponseDto>));
+                    const teamSelection = await vscode.window.showQuickPick(teamItems, { title: 'Select a Team for New Project', placeHolder: 'Choose the team for the new project', ignoreFocusOut: true });
+                    if (!teamSelection) {
+                        vscode.window.showWarningMessage("Team selection cancelled. Project creation aborted.");
+                        return null; // Abort if team selection is cancelled
+                    }
+                    selectedTeam = teamSelection.data;
+                }
+                console.log(`[AuthService] Team selected for new project: ${selectedTeam.id} (${selectedTeam.name})`);
+            } catch (teamError: any) {
+                vscode.window.showErrorMessage(`Error selecting team: ${teamError.message}`);
+                return null; // Abort on error
+            }
+
+            // 2. Prompt for Project Name
+            const projectName = await vscode.window.showInputBox({
+                title: 'New Project Name',
+                prompt: 'Enter a name for the new CybeDefend project',
+                placeHolder: 'e.g., my-web-application',
+                ignoreFocusOut: true,
+                validateInput: value => value && value.trim().length > 0 ? null : 'Project name cannot be empty.'
+            });
+
+            if (!projectName || projectName.trim().length === 0) {
+                vscode.window.showWarningMessage("Project name not provided. Project creation aborted.");
+                return null; // Abort if name is not provided
+            }
+            const trimmedProjectName = projectName.trim();
+            console.log(`[AuthService] Project name entered: ${trimmedProjectName}`);
+
+            // 3. Create Project via API
+            let createdProjectId: string;
+            try {
+                vscode.window.showInformationMessage(`CybeDefend: Creating project "${trimmedProjectName}"...`);
+                const newProject = await apiServiceInstance.createProject(selectedTeam.id, trimmedProjectName);
+                createdProjectId = newProject.projectId;
+                vscode.window.showInformationMessage(`Project "${newProject.name}" created successfully.`);
+                console.log(`[AuthService] Project created successfully via QuickPick flow: ${createdProjectId}`);
+            } catch (createError: any) {
+                vscode.window.showErrorMessage(`Error creating project: ${createError.message}`);
+                return null; // Abort on creation error
+            }
+
+            // 4. Store Project ID and return configuration
+            await this.setWorkspaceProjectId(workspaceRoot, createdProjectId);
+            console.log(`[AuthService] Success: Created and saved new project ID: ${createdProjectId}`);
+            return { apiKey, projectId: createdProjectId, workspaceRoot, organizationId }; // FINAL STEP B (Create new)
+
+        } catch (error: any) {
+            // Catch any unexpected errors during the creation flow
+            vscode.window.showErrorMessage(`An unexpected error occurred during project creation: ${error.message}`);
+            console.error('[AuthService] Unexpected error in handleCreateNewProjectFromQuickPick:', error);
+            return null;
         }
     }
 

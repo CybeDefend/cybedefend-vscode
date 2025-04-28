@@ -6,10 +6,29 @@ All notable changes to the "cybedefend-vscode" extension will be documented in t
 
 *Work in progress for the next release.*
 
-## [0.0.3] - 2025-04-23
+## [0.0.4] - 2025-04-28
+
+### Added
+- Configuration: Allow creating a new project directly during organization project selection.
+- Details View: Highlight the specific line number in the editor when opening a vulnerability location (SAST/IaC).
 
 ### Fixed
-- Chatbot: Language adaptation.
+- Details View: Prevent opening file location twice when clicking vulnerability in list views (SAST/IaC/SCA).
+- Details View: Correctly pass workspace root to open file location command when clicking link in details panel.
+- SCA View: Display SCA findings as a flat list instead of incorrectly grouping by '(File not specified)'.
+- SCA View: Disable line highlighting when opening SCA vulnerability location (manifest file).
+
+## [0.0.3] - 2024-07-28
+
+### Added
+- Initial release with basic SAST, SCA, IaC scanning capabilities.
+- Authentication via API Key and Project ID.
+- Summary, Findings (SAST, SCA, IaC), Details, and Settings views.
+- Chatbot view (Security Champion) for vulnerability context.
+
+### Fixed
+- Improved API error handling and user feedback.
+- Addressed minor UI inconsistencies.
 
 ## [0.0.2] - 2025-04-23
 

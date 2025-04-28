@@ -76,26 +76,7 @@ export class ScaViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
                         if (message.vulnerabilityData && message.scanType === this.scanType) { // Check scanType
                             // Cast to specific DTO for easier property access
                             const vulnData = message.vulnerabilityData as ScaVulnerabilityWithCvssDto;
-
-                            // Action 1: Show Details Panel
                             vscode.commands.executeCommand(COMMAND_SHOW_DETAILS, vulnData, message.scanType);
-
-                            // Action 2: Open File Location (for SCA, open the manifest file)
-                            const manifestFilePath = vulnData.scaDetectedPackage?.fileName;
-                            if (typeof manifestFilePath === 'string') {
-                                const relativeFilePath = manifestFilePath;
-                                const lineToShow = 1; // Default to line 1 for manifest files
-
-                                if (this._workspaceRoot) {
-                                    console.log(`[${this.scanType}ViewProvider] Opening manifest file. Root: ${this._workspaceRoot}, Relative: ${relativeFilePath}, Line: ${lineToShow}`);
-                                    vscode.commands.executeCommand(COMMAND_OPEN_FILE_LOCATION, this._workspaceRoot, relativeFilePath, lineToShow);
-                                } else {
-                                    console.error(`[${this.scanType}ViewProvider] Cannot open manifest file: Workspace root is not set.`);
-                                    vscode.window.showErrorMessage("Cannot open manifest file: Workspace root configuration is missing.");
-                                }
-                            } else {
-                                console.warn(`[${this.scanType}ViewProvider] Missing 'scaDetectedPackage.fileName' in vulnerabilityData for opening manifest file. Data:`, vulnData);
-                            }
                         } else {
                             console.warn(`[${this.scanType}ViewProvider] Invalid data received for 'vulnerabilityClicked' or wrong scanType:`, message);
                         }

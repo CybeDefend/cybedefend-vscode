@@ -8,6 +8,13 @@ import { createMockDetailsResponse } from '../test/mocks/mockVulnerabilities';
 
 const USE_MOCK_DATA_DETAILS = true;
 
+// Define the decoration type for highlighting the vulnerability line
+// We define it outside the function so it's created only once.
+const vulnerabilityLineDecorationType = vscode.window.createTextEditorDecorationType({
+    isWholeLine: true, // Apply to the entire line
+    backgroundColor: new vscode.ThemeColor('editor.findMatchHighlightBackground'),
+});
+
 /**
  * Handles showing the details for a selected vulnerability.
  * Uses the WebviewPanel based approach instead of the WebviewView.
@@ -19,6 +26,9 @@ export async function showVulnerabilityDetailsCommand(
     detailsViewProvider: DetailsWebviewViewProvider,
     projectId: string
 ) {
+    // Determine the workspace root - assumes the first workspace folder if multiple exist
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
     if (!vulnerabilityDataFromList) {
         vscode.window.showErrorMessage('No vulnerability data provided');
         return;
@@ -28,10 +38,10 @@ export async function showVulnerabilityDetailsCommand(
     if (USE_MOCK_DATA_DETAILS) {
         try {
             const mockDetailedResponse = createMockDetailsResponse(vulnerabilityDataFromList);
-            detailsViewProvider.updateContent(mockDetailedResponse);
+            detailsViewProvider.updateContent(mockDetailedResponse, workspaceRoot);
         } catch (mockError: any) {
             vscode.window.showErrorMessage(`Failed to show mock details: ${mockError.message}`);
-            detailsViewProvider.updateContent(undefined);
+            detailsViewProvider.updateContent(undefined, undefined);
         }
     }
 
@@ -39,7 +49,7 @@ export async function showVulnerabilityDetailsCommand(
     const vulnerabilityId = vulnerabilityDataFromList.id;
     if (!vulnerabilityId) {
         vscode.window.showErrorMessage('Invalid vulnerability ID');
-        detailsViewProvider.updateContent(undefined);
+        detailsViewProvider.updateContent(undefined, undefined);
         return;
     }
 
@@ -53,7 +63,7 @@ export async function showVulnerabilityDetailsCommand(
 
     if (!scanType) {
         vscode.window.showErrorMessage(`Could not determine vulnerability type`);
-        detailsViewProvider.updateContent(undefined);
+        detailsViewProvider.updateContent(undefined, undefined);
         return;
     }
 
@@ -62,12 +72,12 @@ export async function showVulnerabilityDetailsCommand(
             { location: vscode.ProgressLocation.Window, title: `Loading details...` },
             async () => {
                 const detailedResponse = await apiService.getVulnerabilityDetails(projectId, vulnerabilityId, scanType);
-                detailsViewProvider.updateContent(detailedResponse);
+                detailsViewProvider.updateContent(detailedResponse, workspaceRoot);
             }
         );
     } catch (error: any) {
         vscode.window.showErrorMessage(`Could not load vulnerability details: ${error.message}`);
-        detailsViewProvider.updateContent(undefined);
+        detailsViewProvider.updateContent(undefined, undefined);
     }
 }
 
@@ -78,8 +88,8 @@ export async function showVulnerabilityDetailsCommand(
  * @param relativeFilePath - The file path relative to the workspace root (from vulnerability data).
  * @param lineNumber - The line number to navigate to (1-based).
  */
-export async function openFileLocationCommand(workspaceRoot: string | undefined | null, relativeFilePath: string | undefined | null, lineNumber: number): Promise<void> {
-    console.log(`[openFileLocationCommand] Received arguments: workspaceRoot='${workspaceRoot}', relativeFilePath='${relativeFilePath}', lineNumber=${lineNumber}`);
+export async function openFileLocationCommand(workspaceRoot: string | undefined | null, relativeFilePath: string | undefined | null, lineNumber: number, vulnerabilityType?: ScanType): Promise<void> {
+    console.log(`[openFileLocationCommand] Received arguments: workspaceRoot='${workspaceRoot}', relativeFilePath='${relativeFilePath}', lineNumber=${lineNumber}, type='${vulnerabilityType}'`);
 
     if (!workspaceRoot) {
         console.error("[openFileLocationCommand] Cannot open file location: Workspace root is missing or invalid.");
@@ -115,12 +125,35 @@ export async function openFileLocationCommand(workspaceRoot: string | undefined 
 
         if (zeroBasedLine >= 0 && zeroBasedLine < editor.document.lineCount) {
             console.log(`[openFileLocationCommand] Line number ${lineToShow} (0-based: ${zeroBasedLine}) is valid. Setting selection and revealing.`);
-            const position = new vscode.Position(zeroBasedLine, 0);
-            const range = new vscode.Range(position, position);
 
-            // Step 4: Define the selection and reveal the range
+            // Get the line object to determine its full range
+            const lineObject = editor.document.lineAt(zeroBasedLine);
+
+            // Create a range covering the entire line
+            const highlightRange = lineObject.range;
+
+            // Set the editor's selection to the beginning of the line
+            const position = new vscode.Position(zeroBasedLine, 0);
             editor.selection = new vscode.Selection(position, position);
-            editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+
+            // Reveal the range in the center of the viewport
+            editor.revealRange(highlightRange, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+
+            // Apply the red highlight decoration to the line
+            // Note: Decorations might be cleared if the editor is closed or sometimes on edits.
+            // For persistent highlighting, more complex state management would be needed.
+            console.log(`[openFileLocationCommand] Applying line decoration to range: ${highlightRange.start.line}:${highlightRange.start.character} -> ${highlightRange.end.line}:${highlightRange.end.character}`);
+
+            // Only apply highlight if the type is NOT SCA
+            if (vulnerabilityType !== 'sca') {
+                console.log(`[openFileLocationCommand] Applying highlight decoration (type is ${vulnerabilityType || 'unknown'}).`);
+                editor.setDecorations(vulnerabilityLineDecorationType, [highlightRange]);
+            } else {
+                console.log(`[openFileLocationCommand] Skipping highlight decoration (type is sca).`);
+                // Optionally clear any previous decorations if necessary, though likely not needed here
+                // editor.setDecorations(vulnerabilityLineDecorationType, []); 
+            }
+
             console.log(`[openFileLocationCommand] Successfully revealed line ${lineToShow}.`);
         } else {
             console.warn(`[openFileLocationCommand] Line number ${lineToShow} is outside the document bounds (Total lines: ${editor.document.lineCount}). Skipping selection/reveal.`);

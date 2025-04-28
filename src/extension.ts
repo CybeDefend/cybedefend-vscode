@@ -210,9 +210,9 @@ export async function activate(context: vscode.ExtensionContext) {
     // Open File Location Command
     context.subscriptions.push(
         vscode.commands.registerCommand(COMMAND_OPEN_FILE_LOCATION,
-            (workspaceRoot: string, relativeFilePath: string, lineNumber: number) => {
-                console.log(`[CybeDefendScanner] Command '${COMMAND_OPEN_FILE_LOCATION}' received: Root='${workspaceRoot}', Path='${relativeFilePath}', Line='${lineNumber}'`);
-                openFileLocationCommand(workspaceRoot, relativeFilePath, lineNumber);
+            (workspaceRoot: string | undefined | null, relativeFilePath: string | undefined | null, lineNumber: number, vulnerabilityType: ScanType | undefined) => {
+                console.log(`[CybeDefendScanner] Command '${COMMAND_OPEN_FILE_LOCATION}' received: Root='${workspaceRoot}', Path='${relativeFilePath}', Line='${lineNumber}', Type='${vulnerabilityType}'`);
+                openFileLocationCommand(workspaceRoot, relativeFilePath, lineNumber, vulnerabilityType);
             }
         )
     );

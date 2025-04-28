@@ -92,7 +92,7 @@ function _generateScaReferencesHtml(references: VulnerabilityScaReferenceDto[] |
 /**
  * Generates HTML for the Vulnerability Details Webview View.
  */
-export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdResponseDto, webview: vscode.Webview, extensionUri: vscode.Uri): string {
+export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdResponseDto, webview: vscode.Webview, extensionUri: vscode.Uri, workspaceRoot: string | undefined): string {
     const nonce = getNonce();
     const { codiconsUri, codiconsFontUri } = getCommonAssetUris(webview, extensionUri);
     const vulnerabilityObject = response.vulnerability;
@@ -596,6 +596,7 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
             const filePathForScript = ${JSON.stringify(filePath)};
             const lineNumberForScript = ${lineNumber};
             const vulnerabilityType = '${currentVulnType || ''}';
+            const workspaceRootForScript = ${JSON.stringify(workspaceRoot)};
 
             document.querySelectorAll('.location-link').forEach(link => {
                 link.addEventListener('click', event => {
@@ -606,8 +607,10 @@ export function getDetailsWebviewHtml(response: GetProjectVulnerabilityByIdRespo
                          const lineToSend = (vulnerabilityType === 'sca' || targetLine <= 0) ? 1 : targetLine;
                          vscode.postMessage({
                             command: 'triggerOpenFile',
+                            workspaceRoot: workspaceRootForScript,
                             filePath: targetPath,
-                            lineNumber: lineToSend
+                            lineNumber: lineToSend,
+                            vulnerabilityType: vulnerabilityType
                         });
                     } else {
                         console.warn("Open file link clicked, but path invalid.");

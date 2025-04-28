@@ -78,24 +78,6 @@ export class IacViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
 
                             // Action 1: Show Details Panel
                             vscode.commands.executeCommand(COMMAND_SHOW_DETAILS, vulnData, message.scanType);
-
-                            // Action 2: Open File Location (logic similar to SAST for IaC)
-                            if (typeof vulnData.path === 'string' && typeof vulnData.vulnerableStartLine === 'number') {
-                                const relativeFilePath = vulnData.path;
-                                const lineNumber = vulnData.vulnerableStartLine;
-                                const lineToShow = Math.max(1, lineNumber);
-
-                                if (this._workspaceRoot) {
-                                    console.log(`[${this.scanType}ViewProvider] Opening file. Root: ${this._workspaceRoot}, Relative: ${relativeFilePath}, Line: ${lineToShow}`);
-                                    vscode.commands.executeCommand(COMMAND_OPEN_FILE_LOCATION, this._workspaceRoot, relativeFilePath, lineToShow);
-                                } else {
-                                    console.error(`[${this.scanType}ViewProvider] Cannot open file: Workspace root is not set.`);
-                                    vscode.window.showErrorMessage("Cannot open file: Workspace root configuration is missing.");
-                                }
-                            } else {
-                                console.warn(`[${this.scanType}ViewProvider] Missing 'path' or 'vulnerableStartLine' in vulnerabilityData for opening file location. Data:`, vulnData);
-                                vscode.window.showWarningMessage("Could not determine file location for this vulnerability (missing path or line number).");
-                            }
                         } else {
                             console.warn(`[${this.scanType}ViewProvider] Invalid data received for 'vulnerabilityClicked' or wrong scanType:`, message);
                         }
