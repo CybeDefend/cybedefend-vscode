@@ -27,7 +27,7 @@
         "properties": {
           "cybedefendScanner.apiBaseUrl": {
             "type": "string",
-            "default": "https://api-preprod.cybedefend.com",
+            "default": "http://localhost:3000",
             "description": "Base URL for the Cybedefend API"
           },
           "cybedefendScanner.projectId": {

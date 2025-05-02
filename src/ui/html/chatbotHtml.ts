@@ -118,7 +118,7 @@ export function getChatbotHtml(
     font-src ${webview.cspSource};
     img-src ${webview.cspSource} https: data:;
     script-src 'nonce-${nonce}' ${webview.cspSource};
-    connect-src https://api-preprod.cybedefend.com;
+    connect-src http://localhost:3000;
 `.replace(/\s{2,}/g, ' ').trim(); // Keep connect-src as it was
 
         // 3. Prepare Initial State JSON for JS injection

@@ -7,6 +7,8 @@ export class StartConversationRequestDto {
 
   vulnerabilityType?: 'sast' | 'iac' | 'sca';
 
+  language?: string;
+
   constructor(partial?: Partial<StartConversationRequestDto>) {
     Object.assign(this, partial);
   }

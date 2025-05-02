@@ -185,52 +185,67 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
 
     /** Handles the sending of a user message (POST -> SSE logic) */
     private async _handleSendMessage(text: string): Promise<void> {
-        // Pre-conditions
-        if (this._state.isLoading || this._state.isStreaming) { vscode.window.showWarningMessage("Please wait for the current response to finish."); return; }
-        if (!this._state.projectId) { this._state.error = "Cannot send message: Project ID is not configured."; this._notifyWebviewState(); return; }
-        if (this._state.limitReachedError) { vscode.window.showErrorMessage("Message limit reached for this conversation."); return; }
+        // Empêche d’expédier pendant un stream actif ou sans projectId
+        if (this._state.isLoading || this._state.isStreaming) {
+            vscode.window.showWarningMessage("Please wait for the current response to finish.");
+            return;
+        }
+        if (!this._state.projectId) {
+            this._state.error = "Cannot send message: Project ID is not configured.";
+            this._notifyWebviewState();
+            return;
+        }
+        if (this._state.limitReachedError) {
+            vscode.window.showErrorMessage("Message limit reached for this conversation.");
+            return;
+        }
 
-        // Prepare state
-        this.disposeSSEConnection();
-        this._state.isLoading = true; this._state.error = null; this._state.limitReachedError = null; this._state.assistantStreamContent = "";
-        const userMessage: MessageDto = new MessageDto('user', text, new Date());
-        this._state.messages = [...this._state.messages, userMessage];
-        this._notifyWebviewState(); // Optimistic UI update
+        // Optimistic UI : on ajoute immédiatement le message de l’utilisateur
+        this._state.isLoading = true;
+        this._state.error = null;
+        this._state.limitReachedError = null;
+        const userMsg = new MessageDto('user', text, new Date());
+        this._state.messages = [...this._state.messages, userMsg];
+        this._notifyWebviewState();
 
-        // API POST call
+        // Détermine si on continue une conversation existante
+        const isContinuation = !!this._state.conversationId;
+        let conversationIdToStream: string;
+
         try {
-            let conversationIdToStream: string | null = null;
-            if (this._state.conversationId) { // Continue existing conversation
-                const request = new AddMessageConversationRequestDto(this._state.conversationId, text, this._state.projectId);
-                const response = await this._apiService.continueConversation(request);
-                conversationIdToStream = response.conversationId;
-            } else { // Start new conversation (potentially with vulnerability context)
-                const isContextual = !!this._state.selectedVulnerability;
-                const request = new StartConversationRequestDto({
-                    projectId: this._state.projectId,
-                    isVulnerabilityConversation: isContextual,
-                    vulnerabilityId: this._state.selectedVulnerability?.id,
-                    vulnerabilityType: isContextual ? (this._state.selectedVulnerability?.vulnerability?.vulnerabilityType as 'sast' | 'iac' | 'sca' | undefined) : undefined
-                });
-                console.log('[ChatbotViewProvider] Starting new conversation with request:', request);
-                const response = await this._apiService.startConversation(request);
-                this._state.conversationId = response.conversationId; // Store the new ID
-                conversationIdToStream = response.conversationId;
-            }
-
-            // Start SSE stream if POST successful
-            if (conversationIdToStream) {
-                // Ne pas mettre isLoading à false ici pour maintenir la continuité de l'état de chargement
-                // isLoading sera mis à false quand isStreaming deviendra true (dans _startSseStreamWithClientLib)
-                this._startSseStreamWithClientLib(conversationIdToStream); // Non-blocking call
+            if (isContinuation) {
+                // 1️⃣ – on POST /message pour ajouter le message
+                const req = new AddMessageConversationRequestDto(
+                    this._state.conversationId!,
+                    text,
+                    this._state.projectId
+                );
+                const resp = await this._apiService.continueConversation(req);
+                conversationIdToStream = resp.conversationId;
             } else {
-                throw new Error("Failed to obtain a valid conversation ID from the API.");
+                // 2️⃣ – on POST /start pour créer la conv et récupérer son ID
+                const req = new StartConversationRequestDto({
+                    projectId: this._state.projectId!,
+                    isVulnerabilityConversation: !!this._state.selectedVulnerability,
+                    vulnerabilityId: this._state.selectedVulnerability?.id,
+                    vulnerabilityType: this._state.selectedVulnerability?.vulnerability?.vulnerabilityType as 'sast' | 'iac' | 'sca' | undefined,
+                    language: 'en',
+                });
+                const resp = await this._apiService.startConversation(req);
+                this._state.conversationId = resp.conversationId;
+                conversationIdToStream = resp.conversationId;
             }
 
-        } catch (error: any) { // Handle POST error
-            console.error("[ChatbotViewProvider] Error during sendMessage POST phase:", error);
-            this._state.error = error.message || "Failed to send message.";
-            this._state.isLoading = false; this._state.isStreaming = false;
+            // 3️⃣ – on démarre le SSE en passant `message=` si on continue
+            await this._startSseStreamWithClientLib(
+                conversationIdToStream,
+                isContinuation ? text : undefined
+            );
+        } catch (err: any) {
+            console.error("[ChatbotViewProvider] Error during sendMessage:", err);
+            this._state.error = err.message || "Failed to send message.";
+            this._state.isLoading = false;
+            this._state.isStreaming = false;
             this._notifyWebviewState();
         }
     }
@@ -239,134 +254,89 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
      * Establishes and manages the SSE connection using 'eventsource-client'.
      * @param conversationId The ID of the conversation to stream.
      */
-    private async _startSseStreamWithClientLib(conversationId: string): Promise<void> {
-        // Pre-conditions
+    private async _startSseStreamWithClientLib(
+        conversationId: string,
+        message?: string
+    ): Promise<void> {
         if (!this._state.projectId) { return; }
         this.disposeSSEConnection();
+
         const apiKey = await this._apiService.getApiKey();
         if (!apiKey) { return; }
 
+        // Construit l’URL SSE en ajoutant le texte du message si on en a un
         const baseUrl = getApiBaseUrl();
-        const sseUrl = `${baseUrl}/project/${this._state.projectId}/ai/conversation/${conversationId}/stream`;
-        console.log(`[ChatbotViewProvider] Starting SSE stream for conversation ${conversationId} at ${sseUrl}`);
+        let sseUrl = `${baseUrl}/project/${this._state.projectId}/ai/conversation/${conversationId}/stream`;
+        if (message) {
+            sseUrl += `?message=${encodeURIComponent(message)}`;
+        }
+        console.log(`[ChatbotViewProvider] Starting SSE (${message ? 'continuation' : 'start'}) for conv ${conversationId} at ${sseUrl}`);
 
-        // Reset streaming state
-        this._state.isStreaming = false; // Will be set true on first delta
+        // Initialise l’état
+        this._state.isStreaming = false;     // passera à true au premier 'delta'
+        this._state.isLoading = true;        // reste true jusqu’au premier 'delta'
         this._state.assistantStreamContent = "";
         this._state.error = null;
         this._notifyWebviewState();
 
-        let _streamEndedIntentionally = false;
+        let intentionalEnd = false;
+        let es: EventSourceClientInstance;
 
         try {
-            const options = { url: sseUrl, headers: { 'X-API-Key': apiKey }, retry: 0 };
-            const es = createEventSource(options);
+            es = createEventSource({ url: sseUrl, headers: { 'X-API-Key': apiKey } });
             this._eventSourceInstance = es;
 
-            // Indicate streaming might start soon (though isStreaming=true happens on first delta)
-            // No immediate state change needed here, wait for 'delta'
-
-            for await (const event of es) {
-                try {
-                    if (typeof event.data !== 'string' || !event.data) { continue; }
-                    const parsedData: SsePayload = JSON.parse(event.data);
-
-                    switch (parsedData.type) {
-                        case 'delta':
-                            if (!this._state.isStreaming) {
-                                this._state.isStreaming = true;
-                                // Now that isStreaming is true, we can disable isLoading
-                                this._state.isLoading = false;
-                            }
-                            this._state.assistantStreamContent += parsedData.payload;
-                            this._notifyWebviewState();
-                            break;
-                        case 'error':
-                            const errPayload = parsedData.payload as SseErrorPayload;
-                            const errMsg = errPayload.message || "Unknown stream error";
-                            console.error(`SSE Error Payload: ${errPayload.code} - ${errMsg}`);
-                            if (errPayload.code === 403 && errMsg.toLowerCase().includes('limit reached')) { this._state.limitReachedError = errMsg; }
-                            else { this._state.error = `Streaming Error (${errPayload.code || 'SSE'}): ${errMsg}`; }
-                            this._state.isStreaming = false;
-                            this._state.isLoading = false; // Ensure isLoading is also disabled in case of error
-                            _streamEndedIntentionally = true;
-                            this._notifyWebviewState();
-                            this._eventSourceInstance?.close(); // Close connection on error
-                            return; // Exit the loop and function
-                        case 'done':
-                            console.log("[ChatbotViewProvider] SSE 'done' event received.");
-                            _streamEndedIntentionally = true; // Mark intentional end
-                            this._eventSourceInstance?.close(); // Ensure connection is closed *before* state update
-                            this._eventSourceInstance = null;
-                            // Final state update happens in 'finally' block
-                            return; // Exit the loop
-                        case 'history':
-                            if (Array.isArray(parsedData.payload) && this._state.messages.length <= 1) {
-                                console.log("[ChatbotViewProvider] Received history, updating messages.");
-                                // Ensure dates are Date objects if needed
-                                this._state.messages = parsedData.payload.map(m => ({ ...m, createdAt: new Date(m.createdAt) }));
-                                this._notifyWebviewState();
-                            }
-                            break;
-                        case 'info':
-                            console.log("[ChatbotViewProvider] SSE Info:", parsedData.payload);
-                            break;
-                        default:
-                            console.warn("[ChatbotViewProvider] Unknown SSE message type:", parsedData.type);
-                            break;
-                    }
-                } catch (parseError) {
-                    console.error("[ChatbotViewProvider] Error parsing SSE message:", parseError, "Data:", event.data);
-                    this._state.error = "Failed to parse message from AI stream.";
-                    this._state.isStreaming = false;
-                    this._state.isLoading = false; // Ensure isLoading is also disabled in case of parsing error
-                    _streamEndedIntentionally = true; // Treat parse error as stream end
-                    this._eventSourceInstance?.close();
-                    this._notifyWebviewState();
-                    return; // Exit the loop
+            for await (const evt of es) {
+                const payload = JSON.parse(evt.data || '{}');
+                switch (payload.type) {
+                    case 'delta':
+                        if (!this._state.isStreaming) {
+                            this._state.isStreaming = true;
+                            this._state.isLoading = false;
+                        }
+                        this._state.assistantStreamContent += payload.payload;
+                        this._notifyWebviewState();
+                        break;
+                    case 'error':
+                        this._state.error = payload.payload.message || "Stream error";
+                        this._state.limitReachedError = payload.payload.code === 403 ? payload.payload.message : null;
+                        intentionalEnd = true;
+                        es.close();
+                        return;
+                    case 'done':
+                        intentionalEnd = true;
+                        es.close();
+                        return;
+                    default:
+                        // history/info ignorés ici
+                        break;
                 }
             }
-            // Loop finished without explicit 'done' or 'error' (might indicate unexpected close)
-            console.warn("[ChatbotViewProvider] SSE stream loop finished unexpectedly.");
-            _streamEndedIntentionally = _streamEndedIntentionally || false; // If loop finishes, it wasn't 'done' or 'error' event path
 
+            console.warn("[ChatbotViewProvider] SSE finished unexpectedly.");
         } catch (connectionError: any) {
             console.error("[ChatbotViewProvider] SSE Connection Error:", connectionError);
-            let errorMessage = "Chat connection failed.";
-            if (connectionError instanceof Error) { errorMessage = connectionError.message; }
-            if (errorMessage.includes("401")) { errorMessage = "Authentication failed (401). Check API Key."; }
-            if (!_streamEndedIntentionally && !this._state.limitReachedError) { // Only set error if not ended by 'done'/'error'/'limit'
-                this._state.error = errorMessage;
+            if (!intentionalEnd && !this._state.limitReachedError) {
+                this._state.error = connectionError.message || "Chat connection failed.";
             }
-            this._state.isLoading = false; // Ensure isLoading is also disabled in case of connection error
         } finally {
-            console.log("[ChatbotViewProvider] SSE stream 'finally' block executing.");
-            // Add the complete streamed message if it exists and no critical error occurred
+            // Ajoute le message final si besoin et remet isStreaming/loading à false
             if (this._state.assistantStreamContent.trim() && !this._state.error && !this._state.limitReachedError) {
                 const finalMsg = new MessageDto('assistant', this._state.assistantStreamContent.trim(), new Date());
-                const lastMsg = this._state.messages[this._state.messages.length - 1];
-                // Avoid duplicating the message if already added somehow
-                if (!(lastMsg?.role === 'assistant' && lastMsg.content === finalMsg.content)) {
+                const last = this._state.messages[this._state.messages.length - 1];
+                if (!(last.role === 'assistant' && last.content === finalMsg.content)) {
                     this._state.messages.push(finalMsg);
-                    console.log("[ChatbotViewProvider] Final assistant message added.");
                 }
             }
 
-            // Ensure connection is closed and state is reset
             if (this._eventSourceInstance) {
                 this._eventSourceInstance.close();
                 this._eventSourceInstance = null;
             }
-            this._state.isStreaming = false; // Crucial: ensure streaming is marked as false
-            this._state.isLoading = false; // Ensure isLoading is also disabled at the end
-            this._state.assistantStreamContent = ""; // Clear buffer
-
-            // GUARD: Check view existence before final notification
-            if (this._view) {
-                this._notifyWebviewState(); // Notify final state
-            } else {
-                console.log("[ChatbotViewProvider] SSE 'finally': View not available for final state notification.");
-            }
+            this._state.isStreaming = false;
+            this._state.isLoading = false;
+            this._state.assistantStreamContent = "";
+            this._notifyWebviewState();
             console.log("[ChatbotViewProvider] SSE stream processing finished.");
         }
     }

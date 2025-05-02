@@ -19,6 +19,6 @@ export const CONFIG_API_BASE_URL = 'cybedefendScanner.apiBaseUrl';
 export const CONFIG_PROJECT_ID = 'cybedefendScanner.projectId';
 export const SECRET_API_KEY = 'cybedefendScannerApiKey';
 
-export const DEFAULT_API_BASE_URL = 'https://api-preprod.cybedefend.com';
+export const DEFAULT_API_BASE_URL = 'http://localhost:3000';
 
 export const WORKSPACE_PROJECT_ID_KEY_PREFIX = 'cybedefendWorkspaceProjectId:';
