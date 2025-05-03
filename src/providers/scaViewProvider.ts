@@ -95,16 +95,19 @@ export class ScaViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
         this._disposables.push(messageSubscription, disposeSubscription);
 
         // --- Initial Data Load Trigger ---
-        if (this._projectId && !this._isLoading) {
-            console.log(`[${this.scanType}ViewProvider] View resolved, Project ID (${this._projectId}) known, triggering initial load.`);
-            this._loadFindings();
-        } else if (this._isLoading) {
-            console.log(`[${this.scanType}ViewProvider] View resolved, but findings are already loading.`);
-            this._updateView();
-        } else {
-            console.log(`[${this.scanType}ViewProvider] View resolved, Project ID unknown or load not needed yet.`);
+        if (this._findings.length > 0) {
+            console.log(`[${this.scanType}ViewProvider] Using cached findings from post-scan.`);
             this._updateView();
         }
+        // Otherwise, if config exists, fetch anew.
+        else if (this._projectId && !this._isLoading) {
+            console.log(`[${this.scanType}ViewProvider] No cached data—fetching from API.`);
+            this._loadFindings();
+        } else {
+            // Project not configured or already loading
+            this._updateView();
+        }
+
     }
 
     /**
@@ -185,10 +188,12 @@ export class ScaViewProvider implements vscode.WebviewViewProvider, vscode.Dispo
      * Updates the findings list after a new scan completes.
      * @param findings The new list of SCA findings.
      */
-    public updateFindings(findings: ScaVulnerabilityWithCvssDto[]): void { // Specific DTO type here
-        console.log(`[${this.scanType}ViewProvider] Findings received via updateFindings. Count: ${findings?.length ?? 0}`);
-        this._findings = (findings as DetailedVulnerability[] || []);
-        this._isLoading = false; this._error = null; this._updateView();
+    public updateFindings(findings: ScaVulnerabilityWithCvssDto[]): void {
+        console.log(`[${this.scanType}ViewProvider] Findings received via updateFindings. Count: ${findings.length}`);
+        this._findings = findings as DetailedVulnerability[];
+        this._isLoading = false;
+        this._error = null;
+        this._updateView();
     }
 
     /** Updates the webview's HTML content. */

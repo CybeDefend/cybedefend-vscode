@@ -48,40 +48,37 @@ function _groupFindingsByFile(findings: DetailedVulnerability[]): Map<string, De
     const grouped = new Map<string, DetailedVulnerability[]>();
 
     for (const vuln of findings) {
-        // Basic validation of the vulnerability object
         if (!vuln?.vulnerability) {
             console.warn("Skipping finding due to missing vulnerability details:", vuln?.id);
             continue;
         }
 
-        let filePath: string | undefined | null = null;
+        let filePath: string | null = null;
 
-        // Determine file path based on vulnerability type
-        switch (vuln.vulnerability.vulnerabilityType) {
-            case 'sast':
-                filePath = (vuln as SastVulnerabilityDetectionDto).path;
-                break;
-            case 'iac':
-                filePath = (vuln as IacVulnerabilityDetectionDto).path;
-                break;
-            case 'sca':
-                // For SCA, use the manifest file where the package was detected
-                filePath = (vuln as ScaVulnerabilityWithCvssDto).scaDetectedPackage?.fileName;
-                break;
-            default:
-                console.warn(`Unknown vulnerability type for grouping: ${vuln.vulnerability.vulnerabilityType}`, vuln.id);
+        if (scaPkg && scaPkg.fileName) {
+            filePath = scaPkg.fileName;
+        } else {
+            const type = vuln.vulnerability.vulnerabilityType;
+            switch (type) {
+                case 'sast':
+                    filePath = (vuln as SastVulnerabilityDetectionDto).path;
+                    break;
+                case 'iac':
+                    filePath = (vuln as IacVulnerabilityDetectionDto).path;
+                    break;
+                default:
+                    filePath = null;
+            }
         }
 
-        const key = filePath || NO_FILE_KEY; // Use constant if path is missing
-        if (!grouped.has(key)) {
-            grouped.set(key, []);
-        }
-        grouped.get(key)?.push(vuln);
+        const key = filePath || NO_FILE_KEY;
+        if (!grouped.has(key)) { grouped.set(key, []); }
+        grouped.get(key)!.push(vuln);
     }
+
     return grouped;
 }
 
-// REMOVED: _createOpenFileCommandUri function is no longer needed as opening file is handled by the provider.
 
 /**
  * Generates the HTML content for a Findings Webview View (SAST, IaC, SCA).
@@ -103,82 +100,33 @@ export function getFindingsViewHtml(
     const findingsCount = findings?.length ?? 0;
     const groupedFindings = _groupFindingsByFile(findings);
     let findingsGroupHtml = '';
-    let allFindingsHtml = ''; // Added for direct SCA list
 
+    // If no findings, display placeholder
     if (findingsCount === 0) {
         findingsGroupHtml = '<p class="no-findings">No findings of this type were detected.</p>';
-    } else if (scanType === 'sca') {
-        // --- SCA: Display all findings directly without grouping --- 
-        const listItemsHtml = findings.map(vuln => {
-            if (!vuln?.vulnerability) { return ''; }
-
-            const severity = vuln.currentSeverity?.toUpperCase() as VulnerabilitySeverityEnum || VulnerabilitySeverityEnum.UNKNOWN;
-            const iconId = severityToIconMap[severity] || severityToIconMap.UNKNOWN;
-            const severityClass = getSeverityClass(severity);
-            const severityColor = severityColorMap[severity] || severityColorMap.UNKNOWN;
-            const severityStyle = `color: ${severityColor}; font-weight: bold;`;
-
-            const meta = vuln.vulnerability;
-            const title = escape(meta.name || vuln.id); // Use ID as fallback title
-
-            const scaVuln = vuln as ScaVulnerabilityWithCvssDto;
-            const pkg = scaVuln.scaDetectedPackage;
-            const locationText = pkg ? `${escape(pkg.packageName || '?')}@${escape(pkg.packageVersion || '?')}` : 'Package N/A';
-            const manifestFile = pkg?.fileName || NO_FILE_KEY;
-
-            const locationHtml = `<span class="finding-location" title="Found in: ${escape(manifestFile)}">${locationText}</span>`;
-
-            let vulnDataString = '';
-            try {
-                vulnDataString = escape(JSON.stringify(vuln));
-            } catch (e) {
-                console.error("Failed to stringify finding data:", e, vuln.id);
-                vulnDataString = escape(JSON.stringify({ id: vuln.id, error: 'Data too complex or circular' }));
-            }
-            return `
-                <li class="finding-item ${severityClass}"
-                    data-vulnerability='${vulnDataString}'
-                    data-scan-type='${scanType}'
-                    title="${escape(vuln.id)} - Click for details and location"
-                    tabindex="0"
-                    role="button"
-                    aria-label="Vulnerability: ${title}, Severity: ${severity}, Package: ${locationText}. Press Enter or Space to view details and location.">
-                    <span class="codicon codicon-${iconId} severity-icon" style="${severityStyle}" aria-hidden="true"></span>
-                    <div class="finding-content">
-                        <span class="finding-title">${title}</span>
-                        ${locationHtml}
-                    </div>
-                </li>`;
-        }).join('');
-
-        // Wrap the direct list in a simple container
-        allFindingsHtml = `<ul class="findings-list-direct">${listItemsHtml}</ul>`;
-
     } else {
-        // 1. Calculate score for each group
+        // 1. Compute criticality score per file group
         const scoredGroups = Array.from(groupedFindings.entries()).map(([filePathKey, fileVulns]) => ({
             filePathKey,
             fileVulns,
             score: _calculateFileCriticalityScore(fileVulns)
         }));
 
-        // 2. Sort groups: primarily by score (descending), secondarily by file path (ascending)
+        // 2. Sort by score descending, then by file path ascending
         scoredGroups.sort((a, b) => {
             if (b.score !== a.score) {
-                return b.score - a.score; // Higher score comes first
+                return b.score - a.score;
             }
-            // If scores are equal, sort alphabetically by file path for consistent ordering
             return a.filePathKey.localeCompare(b.filePathKey);
         });
 
-        // 3. Generate HTML from sorted groups
-        scoredGroups.forEach(({ filePathKey, fileVulns, score }) => { // Use destructured sorted data
+        // 3. Render each group
+        scoredGroups.forEach(({ filePathKey, fileVulns, score }) => {
             const fileVulnCount = fileVulns.length;
             const isUnspecifiedFile = filePathKey === NO_FILE_KEY;
             const displayFileName = isUnspecifiedFile ? filePathKey : path.basename(filePathKey);
 
             const listItemsHtml = fileVulns.map(vuln => {
-                // Added check from grouping function for safety, though should be filtered already
                 if (!vuln?.vulnerability) { return ''; }
 
                 const severity = vuln.currentSeverity?.toUpperCase() as VulnerabilitySeverityEnum || VulnerabilitySeverityEnum.UNKNOWN;
@@ -188,30 +136,45 @@ export function getFindingsViewHtml(
                 const severityStyle = `color: ${severityColor}; font-weight: bold;`;
 
                 const meta = vuln.vulnerability;
-                const title = escape(meta.name || vuln.id); // Use ID as fallback title
-                let line = 0; // Default line number
-                let locationText = ''; // Text to display for location
+                let title: string;
+                if (scanType === 'sca') {
+                    const scaVuln = vuln as ScaVulnerabilityWithCvssDto;
+                    const pkg = scaVuln.scaDetectedPackage;
+                    // Prefer vulnerability name (CVE…), fallback on package@version
+                    const vulnName = meta.name?.trim();
+                    if (vulnName) {
+                        title = escape(vulnName);
+                    } else if (pkg?.packageName && pkg?.packageVersion) {
+                        title = `${escape(pkg.packageName)}@${escape(pkg.packageVersion)}`;
+                    } else {
+                        title = escape(vuln.id);
+                    }
+                } else {
+                    // For SAST/IaC keep the original fallback
+                    title = escape(meta.name || vuln.id);
+                }
+                let locationText = '';
+                let line = 0;
 
-                // Determine location text based on type
-                switch (vuln.vulnerability.vulnerabilityType) {
+                // Unified location logic for all scan types
+                switch (scanType) {
                     case 'sast': {
-                        const sastVuln = vuln as SastVulnerabilityDetectionDto;
-                        line = sastVuln.vulnerableStartLine ?? 0;
+                        const s = vuln as SastVulnerabilityDetectionDto;
+                        line = s.vulnerableStartLine ?? 0;
                         locationText = line > 0 ? `Line ${line}` : 'Location N/A';
                         break;
                     }
                     case 'iac': {
-                        const iacVuln = vuln as IacVulnerabilityDetectionDto;
-                        line = iacVuln.vulnerableStartLine ?? 0;
+                        const i = vuln as IacVulnerabilityDetectionDto;
+                        line = i.vulnerableStartLine ?? 0;
                         locationText = line > 0 ? `Line ${line}` : 'Location N/A';
                         break;
                     }
                     case 'sca': {
-                        const scaVuln = vuln as ScaVulnerabilityWithCvssDto;
-                        const pkg = scaVuln.scaDetectedPackage;
-                        locationText = pkg ? `${escape(pkg.packageName || '?')}@${escape(pkg.packageVersion || '?')}` : 'Package N/A';
-                        // Line number isn't directly relevant for SCA in the same way,
-                        line = 0;
+                        const sca = vuln as ScaVulnerabilityWithCvssDto;
+                        const score = sca.cvssScore != null ? `CVSS: ${sca.cvssScore}` : '';
+                        const parts = [score].filter(p => p.length);
+                        locationText = parts.join(' • ');
                         break;
                     }
                     default:
@@ -223,10 +186,10 @@ export function getFindingsViewHtml(
                 let vulnDataString = '';
                 try {
                     vulnDataString = escape(JSON.stringify(vuln));
-                } catch (e) {
-                    console.error("Failed to stringify finding data:", e, vuln.id);
-                    vulnDataString = escape(JSON.stringify({ id: vuln.id, error: 'Data too complex or circular' }));
+                } catch {
+                    vulnDataString = escape(JSON.stringify({ id: vuln.id, error: 'Serialization error' }));
                 }
+
                 return `
                     <li class="finding-item ${severityClass}"
                         data-vulnerability='${vulnDataString}'
@@ -234,7 +197,7 @@ export function getFindingsViewHtml(
                         title="${escape(vuln.id)} - Click for details and location"
                         tabindex="0"
                         role="button"
-                        aria-label="Vulnerability: ${title}, Severity: ${severity}, Location: ${locationText}. Press Enter or Space to view details and location.">
+                        aria-label="Vulnerability: ${title}, Severity: ${severity}, Location: ${locationText}">
                         <span class="codicon codicon-${iconId} severity-icon" style="${severityStyle}" aria-hidden="true"></span>
                         <div class="finding-content">
                             <span class="finding-title">${title}</span>
@@ -243,25 +206,23 @@ export function getFindingsViewHtml(
                     </li>`;
             }).join('');
 
-            // Use <details> for collapsibility, open few items by default
             findingsGroupHtml += `
                 <details class="file-group" ${findingsCount <= 15 ? 'open' : ''}>
                     <summary class="file-summary" title="${escape(filePathKey)}\nScore: ${score}">
                         <span class="codicon codicon-chevron-right" aria-hidden="true"></span>
                         <span class="codicon file-icon ${isUnspecifiedFile ? 'codicon-question' : 'codicon-file-code'}" aria-hidden="true"></span>
                         <span class="file-name">${escape(displayFileName)}</span>
-                        <span class="file-vuln-count" aria-label="${fileVulnCount} vulnerabilities in this file">${fileVulnCount}</span>
+                        <span class="file-vuln-count" aria-label="${fileVulnCount} vulnerabilities">${fileVulnCount}</span>
                     </summary>
                     <ul class="findings-list-nested">
                         ${listItemsHtml}
                     </ul>
-                </details>
-            `;
+                </details>`;
         });
     }
 
-    // Determine which HTML block to use
-    const finalHtmlContent = scanType === 'sca' ? allFindingsHtml : findingsGroupHtml;
+    // Always use grouped HTML (no separate SCA branch)
+    const finalHtmlContent = findingsGroupHtml;
 
     // --- Complete HTML with Styles and Script ---
     return `<!DOCTYPE html>
@@ -289,7 +250,7 @@ export function getFindingsViewHtml(
                 --severity-color-info: ${severityColorMap[VulnerabilitySeverityEnum.INFO]};
                 --severity-color-unknown: ${severityColorMap['UNKNOWN']};
                 --file-group-border: 1px solid var(--vscode-tree-tableColumnsBorderColor, var(--vscode-editorGroup-border));
-                --file-summary-bg: rgba(var(--vscode-button-secondaryBackground-rgb), 0.1); /* Subtle background */
+                --file-summary-bg: rgba(var(--vscode-button-secondaryBackground-rgb), 0.1);
                 --file-summary-hover-bg: var(--vscode-list-hoverBackground);
                 --list-padding: 10px;
             }
@@ -302,7 +263,7 @@ export function getFindingsViewHtml(
                 background-color: var(--vscode-sideBar-background);
             }
 
-            .findings-header { /* Optional header */
+            .findings-header {
                 padding: 5px 10px; font-weight: 600;
                 color: var(--vscode-sideBarTitle-foreground);
                 background-color: var(--vscode-sideBarSectionHeader-background);
@@ -311,145 +272,55 @@ export function getFindingsViewHtml(
                 font-size: 0.95em;
             }
 
-            /* File group styling */
             .file-group { border-bottom: var(--file-group-border); }
             .file-group:last-child { border-bottom: none; }
             .file-summary {
                 display: flex; align-items: center; padding: 6px 10px;
                 cursor: pointer; background-color: var(--file-summary-bg);
-                transition: background-color 0.1s ease-in-out;
-                gap: 5px; list-style: none; /* Remove default marker */
-                user-select: none; /* Prevent text selection on summary */
+                transition: background-color 0.1s;
+                gap: 5px; list-style: none; user-select: none;
             }
             .file-summary:hover { background-color: var(--file-summary-hover-bg); }
             .file-summary::marker, .file-summary::-webkit-details-marker { display: none; }
 
             .file-summary .codicon-chevron-right {
-                font-size: 1em; color: var(--vscode-icon-foreground); margin-right: 2px;
-                width: 16px; text-align: center; transition: transform 0.15s ease-in-out;
+                font-size: 1em; margin-right: 2px; width: 16px; text-align: center;
+                transition: transform 0.15s;
             }
             details[open] > summary .codicon-chevron-right { transform: rotate(90deg); }
-            .file-summary .file-icon { color: var(--vscode-icon-foreground); font-size: 1em; }
+            .file-summary .file-icon { font-size: 1em; }
             .file-name {
                 flex-grow: 1; font-weight: 600; overflow: hidden;
-                text-overflow: ellipsis; white-space: nowrap;
-                color: var(--vscode-list-highlightForeground); margin-left: 2px;
+                text-overflow: ellipsis; white-space: nowrap; margin-left: 2px;
             }
             .file-vuln-count {
-                font-size: 0.85em; font-weight: normal; padding: 1px 5px;
-                border-radius: 8px; background-color: var(--vscode-badge-background);
-                color: var(--vscode-badge-foreground); margin-left: auto; flex-shrink: 0;
+                font-size: 0.85em; padding: 1px 5px; border-radius: 8px;
+                background-color: var(--vscode-badge-background);
+                color: var(--vscode-badge-foreground);
             }
 
-            /* Findings list styling */
             .findings-list-nested { list-style: none; padding: 0; margin: 0; }
             li.finding-item {
-                padding: 5px 10px 5px 30px; /* Indentation */
-                margin: 0; border-radius: 0; cursor: pointer;
                 display: flex; align-items: center; gap: 8px;
-                border: none;
-                border-top: 1px solid var(--vscode-tree-tableColumnsBorderColor, var(--vscode-editorGroup-border));
+                padding: 5px 10px 5px 30px; border-top: 1px solid var(--vscode-tree-tableColumnsBorderColor);
+                cursor: pointer;
             }
             details[open] > ul.findings-list-nested > li:first-child { border-top: none; }
             li.finding-item:hover { background-color: var(--vscode-list-hoverBackground); }
             li.finding-item:focus {
                 outline: 1px solid var(--vscode-focusBorder);
                 background-color: var(--vscode-list-focusBackground);
-                outline-offset: -1px;
             }
 
             .severity-icon {
-                flex-shrink: 0; font-size: 1em; width: 18px; height: 18px;
-                text-align: center; margin-right: 5px; font-weight: bold;
-                border-radius: 3px; /* Slightly rounded square */
-                display: flex; align-items: center; justify-content: center;
-                border: 1px solid transparent; /* Add border for focus state */
-                transition: transform 0.1s ease, background-color 0.1s ease;
+                width: 18px; height: 18px; display: flex; align-items: center;
+                justify-content: center; border-radius: 3px; transition: transform 0.1s;
             }
-            /* Add subtle background on hover/focus */
-            li.finding-item:hover .severity-icon,
-            li.finding-item:focus .severity-icon {
-                 background-color: rgba(var(--vscode-foreground-rgb), 0.08);
-                 transform: scale(1.05);
-            }
-
-            .finding-content { flex-grow: 1; overflow: hidden; display: flex; flex-direction: column; gap: 1px; }
+            .finding-content { display: flex; flex-direction: column; gap: 1px; }
             .finding-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
             .finding-location { font-size: 0.9em; color: var(--vscode-descriptionForeground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-            p.no-findings { padding: 20px; text-align: center; color: var(--vscode-descriptionForeground); font-style: italic; }
-
-            /* Styling for the direct SCA list */
-            .findings-list-direct {
-                list-style: none;
-                padding: 0 var(--list-padding);
-                margin: 0;
-            }
-
-            /* Shared styles for finding items (used in both grouped and direct lists) */
-            .finding-item {
-                display: flex;
-                align-items: center;
-                padding: 8px var(--list-padding);
-                margin-bottom: 2px; /* Small gap between items */
-                border-radius: 4px;
-                cursor: pointer;
-                border-left: 3px solid transparent; /* For severity indication */
-                transition: background-color 0.1s ease, border-left-color 0.1s ease;
-                overflow: hidden; /* Prevent content overflow */
-            }
-
-            .finding-item:hover {
-                background-color: var(--vscode-list-hoverBackground);
-            }
-
-            .finding-item:focus {
-                outline: 1px solid var(--vscode-focusBorder);
-                outline-offset: -1px;
-                background-color: var(--vscode-list-focusBackground);
-            }
-
-            /* Apply severity color to the left border */
-            .finding-item.critical { border-left-color: var(--severity-color-critical); }
-            .finding-item.high { border-left-color: var(--severity-color-high); }
-            .finding-item.medium { border-left-color: var(--severity-color-medium); }
-            .finding-item.low { border-left-color: var(--severity-color-low); }
-            .finding-item.info { border-left-color: var(--severity-color-info); }
-            .finding-item.unknown { border-left-color: var(--severity-color-unknown); }
-
-            .severity-icon {
-                flex-shrink: 0;
-                font-size: 1.1em; /* Slightly larger icon */
-                width: 20px;
-                text-align: center;
-                margin-right: 10px;
-                opacity: 0.9;
-            }
-
-            .finding-content {
-                flex-grow: 1;
-                overflow: hidden; /* Prevent long titles from breaking layout */
-                line-height: 1.4;
-            }
-
-            .finding-title {
-                display: block;
-                font-weight: 500;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                color: var(--vscode-list-activeSelectionForeground);
-                margin-bottom: 2px; /* Space between title and location */
-            }
-
-            .finding-location {
-                display: block;
-                font-size: 0.9em;
-                color: var(--vscode-descriptionForeground);
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-            }
+            p.no-findings { padding: 20px; text-align: center; font-style: italic; color: var(--vscode-descriptionForeground); }
         </style>
     </head>
     <body>
@@ -459,71 +330,19 @@ export function getFindingsViewHtml(
         ${finalHtmlContent}
 
         <script nonce="${nonce}">
-            // Get VS Code API handle (works in webviews)
             const vscode = acquireVsCodeApi();
-
-            // Add event listeners to each finding item
             document.querySelectorAll('.finding-item').forEach(item => {
-                // Ensure items are keyboard accessible
-                item.setAttribute('tabindex', '0'); // Make focusable
-                item.setAttribute('role', 'button'); // Indicate it's interactive
-
-                // --- CLICK LISTENER ---
-                item.addEventListener('click', (event) => {
-                    // Prevent accidental clicks on nested elements if any were added later
-                    if (event.currentTarget !== item) return;
-
-                    const vulnDataString = item.getAttribute('data-vulnerability');
-                    const scanTypeValue = item.getAttribute('data-scan-type');
-
-                    if (vulnDataString && scanTypeValue) {
-                        try {
-                            const vulnerabilityData = JSON.parse(vulnDataString);
-                            // **MODIFIED**: Send the new 'vulnerabilityClicked' command
-                            vscode.postMessage({
-                                command: 'vulnerabilityClicked', // New command name
-                                vulnerabilityData: vulnerabilityData,
-                                scanType: scanTypeValue
-                            });
-                        } catch (e) {
-                            console.error("FindingsHTML: Failed to parse vulnerability data on click:", e, vulnDataString);
-                            // Optionally inform the user via an alert or console message in dev tools
-                            vscode.postMessage({ command: 'error', text: 'Failed to process vulnerability data.' });
-                        }
-                    } else {
-                        console.warn("FindingsHTML: Missing data attributes on clicked item.", item);
+                item.addEventListener('click', () => {
+                    const data = item.getAttribute('data-vulnerability');
+                    const type = item.getAttribute('data-scan-type');
+                    if (data && type) {
+                        vscode.postMessage({ command: 'vulnerabilityClicked', vulnerabilityData: JSON.parse(data), scanType: type });
                     }
                 });
-
-                // --- KEYDOWN LISTENER (for Enter/Space) ---
-                item.addEventListener('keydown', (event) => {
-                    // Trigger action on Enter or Spacebar press when item is focused
-                    if (event.key === 'Enter' || event.key === ' ') {
-                        // Prevent default spacebar scroll or other default actions
-                        event.preventDefault();
-
-                        // Prevent accidental triggers on nested elements
-                        if (event.currentTarget !== item) return;
-
-                        const vulnDataString = item.getAttribute('data-vulnerability');
-                        const scanTypeValue = item.getAttribute('data-scan-type');
-
-                        if (vulnDataString && scanTypeValue) {
-                            try {
-                                const vulnerabilityData = JSON.parse(vulnDataString);
-                                // **MODIFIED**: Send the new 'vulnerabilityClicked' command
-                                vscode.postMessage({
-                                    command: 'vulnerabilityClicked', // New command name
-                                    vulnerabilityData: vulnerabilityData,
-                                    scanType: scanTypeValue
-                                });
-                            } catch (e) {
-                                console.error("FindingsHTML: Failed to parse vulnerability data on keydown:", e, vulnDataString);
-                                vscode.postMessage({ command: 'error', text: 'Failed to process vulnerability data.' });
-                            }
-                        } else {
-                            console.warn("FindingsHTML: Missing data attributes on keydown target item.", item);
-                        }
+                item.addEventListener('keydown', e => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        item.click();
                     }
                 });
             });

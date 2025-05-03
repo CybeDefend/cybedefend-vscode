@@ -345,20 +345,25 @@ function distributeFindingsToProviders(
     const scaVulns: ScaVulnerabilityWithCvssDto[] = [];
 
     for (const vuln of allVulns) {
-        // Use the reliable discriminator
-        const type = vuln.vulnerability?.vulnerabilityType;
-        if (type === 'sast') {
-            sastVulns.push(vuln as SastVulnerabilityDetectionDto);
-        } else if (type === 'iac') {
-            iacVulns.push(vuln as IacVulnerabilityDetectionDto);
-        } else if (type === 'sca') {
+        // If it's clearly an SCA object (has scaDetectedPackage), treat as SCA
+        if ((vuln as ScaVulnerabilityWithCvssDto).scaDetectedPackage) {
             scaVulns.push(vuln as ScaVulnerabilityWithCvssDto);
-        } else {
-            console.warn(`[Distribute] Unknown vulnerability type found:`, vuln);
+            continue;
+        }
+
+        const type = vuln.vulnerability?.vulnerabilityType;
+        switch (type) {
+            case 'sast':
+                sastVulns.push(vuln as SastVulnerabilityDetectionDto);
+                break;
+            case 'iac':
+                iacVulns.push(vuln as IacVulnerabilityDetectionDto);
+                break;
+            default:
+                console.warn(`[Distribute] Unknown vulnerability type:`, type, vuln.id);
         }
     }
 
-    // Update each provider with its filtered list
     sastProvider.updateFindings(sastVulns);
     iacProvider.updateFindings(iacVulns);
     scaProvider.updateFindings(scaVulns);
