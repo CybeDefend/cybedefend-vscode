@@ -6,6 +6,17 @@ All notable changes to the "cybedefend-vscode" extension will be documented in t
 
 *Work in progress for the next release.*
 
+## [0.0.5] - 2025-05-03
+
+### Added
+- Webview dropdown: display SCA findings in the vulnerabilities list.
+
+### Changed
+- `_prepareVulnerabilitiesForWebview`: updated filter/map to detect `scaDetectedPackage` when `vulnerabilityType` is missing, and assign type `sca` accordingly.
+
+### Fixed
+- Correctly include SCA entries in the dropdown even if their payload lacks a `vulnerabilityType` field.
+
 ## [0.0.4] - 2025-04-28
 
 ### Added
