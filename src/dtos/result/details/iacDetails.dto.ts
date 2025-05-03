@@ -8,8 +8,7 @@ export interface IacVulnerabilityDetectionDto extends BaseVulnerabilityDetection
     vulnerableStartLine: number;
     vulnerableEndLine: number;
     scannerType: string;
-    vulnerability: VulnerabilityMetadataDto; // Contient le type 'iac'
-    // vulnerabilityDetectionHistory: any[]; // Ajoute si nécessaire
+    vulnerability: VulnerabilityMetadataDto;
     codeSnippets: CodeSnippetDto[];
-    // Pas de dataFlowItems pour IAC selon l'entité
+    // No data flow items for IaC
 }

@@ -192,7 +192,7 @@ export class ApiService {
             const body = {
                 isVulnerabilityConversation: requestDto.isVulnerabilityConversation,
                 vulnerabilityId: requestDto.vulnerabilityId,
-                vulnerabilityType: requestDto.vulnerabilityType,
+                vulnerabilityType: requestDto.vulnerabilityType || "sca",
                 projectId: projectId,
                 language: "en"
             };

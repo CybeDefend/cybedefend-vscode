@@ -9,8 +9,7 @@ export interface SastVulnerabilityDetectionDto extends BaseVulnerabilityDetectio
     vulnerableEndLine: number;
     scannerType: string;
     fileHash?: string | null;
-    vulnerability: VulnerabilityMetadataDto; // Contient le type 'sast'
-    // vulnerabilityDetectionHistory: any[]; // Ajoute si nécessaire
+    vulnerability: VulnerabilityMetadataDto;
     codeSnippets: CodeSnippetDto[];
     dataFlowItems: DataFlowItemDto[];
 }

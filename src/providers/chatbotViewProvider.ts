@@ -8,9 +8,10 @@ import { COMMAND_OPEN_FILE_LOCATION } from '../constants/constants';
 import { AddMessageConversationRequestDto } from '../dtos/ai/request/add-message-conversation-request.dto';
 import { StartConversationRequestDto } from '../dtos/ai/request/start-conversation-request.dto';
 import { MessageDto } from '../dtos/ai/response/message.dto';
-import { DetailedVulnerability } from '../dtos/result/details';
+import { DetailedVulnerability, ScaVulnerabilityWithCvssDto } from '../dtos/result/details';
 import { getChatbotHtml, ProviderState as HtmlProviderState, VulnerabilityInfoForWebview } from '../ui/html/chatbotHtml';
 import { getApiBaseUrl } from '../utilities/config';
+import { escape as htmlEscape } from 'lodash';
 
 // --- Interfaces ---
 interface WebviewCommand { command: string; text?: string; vulnerability?: DetailedVulnerability | null; vulnerabilityId?: string | null; }
@@ -415,24 +416,59 @@ export class ChatbotViewProvider implements vscode.WebviewViewProvider, vscode.D
         }
     }
 
-    // --- Helper Methods (internal) ---
-    private _prepareVulnerabilitiesForWebview(fullVulnerabilities: DetailedVulnerability[]): VulnerabilityInfoForWebview[] {
+    /**
+     * Prepares the vulnerabilities for the webview dropdown.
+     * Filters and formats the vulnerabilities to be displayed.
+     * @param fullVulnerabilities The full list of vulnerabilities to process.
+     * @returns An array of simplified vulnerability information for the webview.
+     */
+    private _prepareVulnerabilitiesForWebview(
+        fullVulnerabilities: DetailedVulnerability[]
+    ): VulnerabilityInfoForWebview[] {
         return (fullVulnerabilities || [])
-            .filter(v => v?.vulnerability?.vulnerabilityType === 'sast' || v?.vulnerability?.vulnerabilityType === 'iac' || v?.vulnerability?.vulnerabilityType === 'sca')
+            .filter(v => {
+                const t = v.vulnerability.vulnerabilityType;
+                // inclure les SAST / IaC connus...
+                if (t === 'sast' || t === 'iac') { return true; }
+                // ...et aussi tout ce qui a un scaDetectedPackage
+                return !!(v as ScaVulnerabilityWithCvssDto).scaDetectedPackage;
+            })
             .map(vuln => {
+                // déterminer le type
+                let type = vuln.vulnerability.vulnerabilityType as 'sast' | 'iac' | 'sca';
+                if (!type && (vuln as ScaVulnerabilityWithCvssDto).scaDetectedPackage) {
+                    type = 'sca';
+                }
+
+                // récupérer le chemin / le nom
                 let fullPath = '';
-                if (vuln && 'path' in vuln && typeof vuln.path === 'string') { fullPath = vuln.path; }
-                else if (vuln && 'scaFilePath' in vuln && typeof vuln.scaFilePath === 'string') { fullPath = vuln.scaFilePath; } // Handle SCA path
+                let name = vuln.vulnerability.name || vuln.id;
+
+                if (type === 'sca') {
+                    const pkg = (vuln as ScaVulnerabilityWithCvssDto).scaDetectedPackage;
+                    fullPath = pkg?.fileName ?? '';
+                    if (vuln.vulnerability.name?.trim()) {
+                        name = vuln.vulnerability.name;
+                    } else if (pkg?.packageName && pkg.packageVersion) {
+                        name = `${pkg.packageName}@${pkg.packageVersion}`;
+                    }
+                } else {
+                    fullPath = (vuln as any).path || '';
+                }
 
                 const shortPath = fullPath ? path.basename(fullPath) : '(path unknown)';
-                const type = vuln.vulnerability.vulnerabilityType as 'sast' | 'iac' | 'sca';
-                const name = type === 'sca'
-                    ? `${vuln.vulnerability?.name || vuln.id}`
-                    : (vuln.vulnerability?.name || vuln.id);
 
-                return { id: vuln.id, name: name, type: type, fullPath: fullPath, shortPath: shortPath };
+                return {
+                    id: vuln.id,
+                    name: htmlEscape(name),
+                    type,
+                    fullPath: htmlEscape(fullPath),
+                    shortPath: htmlEscape(shortPath),
+                };
             });
     }
+
+
 
     private _notifyWebviewState() {
         if (!this._view?.webview) {

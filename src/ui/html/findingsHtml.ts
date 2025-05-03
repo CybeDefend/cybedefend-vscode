@@ -55,6 +55,7 @@ function _groupFindingsByFile(findings: DetailedVulnerability[]): Map<string, De
 
         let filePath: string | null = null;
 
+        const scaPkg = (vuln as ScaVulnerabilityWithCvssDto).scaDetectedPackage;
         if (scaPkg && scaPkg.fileName) {
             filePath = scaPkg.fileName;
         } else {

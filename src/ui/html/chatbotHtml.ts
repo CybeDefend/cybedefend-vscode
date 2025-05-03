@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 // lodash escape est toujours utile ici pour échapper les données *avant* injection dans JSON
 import { escape } from 'lodash';
 import { MessageDto } from '../../dtos/ai/response/message.dto';
-import { DetailedVulnerability } from '../../dtos/result/details';
+import { DetailedVulnerability, ScaVulnerabilityWithCvssDto } from '../../dtos/result/details';
 import { getNonce } from '../../utilities/utils';
 import { getCodiconStyleSheet, getCommonAssetUris } from './commonHtmlUtils';
 
@@ -118,27 +118,36 @@ export function getChatbotHtml(
     font-src ${webview.cspSource};
     img-src ${webview.cspSource} https: data:;
     script-src 'nonce-${nonce}' ${webview.cspSource};
-    connect-src http://localhost:3000;
+    connect-src https://api-preprod.cybedefend.com;
 `.replace(/\s{2,}/g, ' ').trim(); // Keep connect-src as it was
 
         // 3. Prepare Initial State JSON for JS injection
         //    (Same logic as before to prepare the state object)
         const initialVulnListForJs: VulnerabilityInfoForWebview[] = (state.vulnerabilities || [])
-            .filter(v => v?.vulnerability?.vulnerabilityType === 'sast' || v?.vulnerability?.vulnerabilityType === 'iac' || v?.vulnerability?.vulnerabilityType === 'sca')
+            // on filtre sur le metadata et non sur un champ racine qui n'existe pas
+            .filter(v => {
+                const t = v.vulnerability?.vulnerabilityType;
+                return t === 'sast' || t === 'iac' || t === 'sca';
+            })
             .map(vuln => {
+                const type = vuln.vulnerability!.vulnerabilityType as 'sast' | 'iac' | 'sca';
                 let fullPath = '';
-                if (vuln && typeof vuln === 'object' && 'path' in vuln && vuln.path) {
-                    fullPath = vuln.path;
+
+                if (type === 'sca') {
+                    fullPath = (vuln as ScaVulnerabilityWithCvssDto).scaDetectedPackage?.fileName ?? '';
+                } else {
+                    // SAST / IaC : on utilise le champ path
+                    fullPath = (vuln as any).path ?? '';
                 }
-                // Note: path.basename might not be available if running in a pure web worker context later,
-                // but it's fine in the main extension process here.
+
                 const shortPath = fullPath ? path.basename(fullPath) : '(path unknown)';
+
                 return {
                     id: vuln.id,
-                    name: escapeHtmlForExtension(vuln.vulnerability?.name || vuln.id), // Escape here
-                    type: vuln.vulnerability.vulnerabilityType as 'sast' | 'iac' | 'sca',
-                    fullPath: escapeHtmlForExtension(fullPath), // Escape here
-                    shortPath: escapeHtmlForExtension(shortPath) // Escape here
+                    name: escapeHtmlForExtension(vuln.vulnerability?.name || vuln.id),
+                    type,
+                    fullPath: escapeHtmlForExtension(fullPath),
+                    shortPath: escapeHtmlForExtension(shortPath)
                 };
             });
 
