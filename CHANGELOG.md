@@ -6,6 +6,15 @@ All notable changes to the "cybedefend-vscode" extension will be documented in t
 
 *Work in progress for the next release.*
 
+## [0.0.6] - 2025-05-05
+
+### Added
+- Scan optimization: Automatically exclude temporary files and directories from scanning.
+- Ignored patterns include node_modules, build artifacts, and other common temporary directories.
+
+### Changed
+- Scanning process now filters out non-essential files to improve performance and reduce unnecessary scan load.
+
 ## [0.0.5] - 2025-05-03
 
 ### Added
