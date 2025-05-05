@@ -19,11 +19,6 @@ import { createMockVulnerabilitiesResponse } from '../test/mocks/mockVulnerabili
 const POLLING_INTERVAL_MS = 5000; // 5 seconds polling interval
 const MAX_POLLING_ATTEMPTS = 60; // 5 minutes timeout (60 * 5s)
 
-// --- Development Switch ---
-// Set to true to use mock data for UI testing, false to use the real API.
-const USE_MOCK_DATA = false;
-// --- ------------------ ---
-
 /**
  * Executes the 'Start Scan' command logic.
  * This involves checking prerequisites, optionally using mock data,
@@ -49,47 +44,6 @@ export async function startScanCommand(
     projectId: string,
     workspaceFolder: string
 ): Promise<void> {
-
-    // --- ============================ ---
-    // --- MOCK DATA HANDLING SECTION ---
-    // --- ============================ ---
-    if (USE_MOCK_DATA) {
-        summaryProvider.setLoading(true, "Loading mock data...");
-        sastProvider.updateFindings([]); iacProvider.updateFindings([]); scaProvider.updateFindings([]); // Clear previous findings
-        await vscode.window.withProgress(
-            {
-                location: vscode.ProgressLocation.Notification,
-                title: `CybeDefend: Loading mock data...`,
-                cancellable: false
-            },
-            async (progress) => {
-                progress.report({ message: 'Generating mock results...' });
-                await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate delay
-                try {
-                    const mockResponse = createMockVulnerabilitiesResponse(projectId);
-                    summaryProvider.updateSummary({ // Update summary view
-                        total: mockResponse.total,
-                        counts: mockResponse.vulnCountByType,
-                        scanInfo: mockResponse.scanProjectInfo
-                    });
-                    distributeFindingsToProviders( // Update findings views
-                        mockResponse.vulnerabilities,
-                        sastProvider, iacProvider, scaProvider
-                    );
-                    vscode.window.showInformationMessage(`Mock Scan Complete: Displaying ${mockResponse.vulnerabilities.length} mock vulnerabilities.`);
-                } catch (mockError: any) {
-                    summaryProvider.updateError(`Failed to load mock data: ${mockError.message}`);
-                }
-            }
-        );
-        return; // Exit command after handling mock data
-    }
-    // --- ============================ ---
-    // --- END MOCK DATA HANDLING     ---
-    // --- ============================ ---
-
-
-    // --- REAL API LOGIC ---
     summaryProvider.setLoading(true, "Starting scan...");
     sastProvider.updateFindings([]); iacProvider.updateFindings([]); scaProvider.updateFindings([]);
 
@@ -243,58 +197,80 @@ async function pollScanStatus(
     throw new Error(`Scan polling timed out after ${attempts} attempts.`);
 }
 
+
 /**
- * Creates a zip archive of the workspace directory, filtering common excludes.
+ * Creates a zip archive of the workspace directory, excluding common temporary/build folders
+ * by pruning entire directory trees at glob time—so we never descend into them.
+ *
  * @param workspacePath Absolute path to the workspace folder.
- * @param token CancellationToken to observe for cancellation requests.
- * @returns Promise resolving with the path to the created zip file.
+ * @param token        CancellationToken to abort if the user cancels.
+ * @returns            Promise resolving with the path to the created zip file.
  */
-async function createWorkspaceZip(workspacePath: string, token: vscode.CancellationToken): Promise<string> {
+async function createWorkspaceZip(
+    workspacePath: string,
+    token: vscode.CancellationToken
+): Promise<string> {
+    // 1. Prepare temp zip path
     const tempDir = os.tmpdir();
     const zipFileName = `cybedefend-scan-${Date.now()}.zip`;
     const zipFilePath = path.join(tempDir, zipFileName);
 
+    // 2. Create output stream and archiver instance
     const output = fs.createWriteStream(zipFilePath);
-    const archive = archiver('zip', { zlib: { level: 9 } }); // Use compression
+    const archive = archiver('zip', { zlib: { level: 9 } }); // max compression
 
+    // 3. Listen for cancellation, errors, and completion
     const archivePromise = new Promise<void>((resolve, reject) => {
-        let cancellationListener = token?.onCancellationRequested(() => {
+        const cancelListener = token.onCancellationRequested(() => {
             archive.abort();
-            // Ensure stream is closed before unlinking, handle potential errors
-            output.close((err) => {
-                fs.unlink(zipFilePath, (unlinkErr) => {
-                    reject(new Error('Cancelled by user.'));
-                });
-            });
+            output.close(() => fs.unlink(zipFilePath, () => reject(new Error('Cancelled by user.'))));
         });
 
-        output.on('close', () => { cancellationListener?.dispose(); if (!token?.isCancellationRequested) { resolve(); } });
-        output.on('error', (err) => { cancellationListener?.dispose(); console.error('[ZipUtil] Output stream error:', err); reject(err); });
-        archive.on('warning', (err) => { if (err.code !== 'ENOENT') { cancellationListener?.dispose(); console.error('[ZipUtil] Archiver warning:', err); reject(err); } else { console.warn('[ZipUtil] Archiver warning (ENOENT ignored):', err); } });
-        archive.on('error', (err) => { cancellationListener?.dispose(); console.error('[ZipUtil] Archiver fatal error:', err); reject(err); });
+        output.on('close', () => { cancelListener.dispose(); resolve(); });
+        output.on('error', err => { cancelListener.dispose(); reject(err); });
+        archive.on('warning', err => { if (err.code !== 'ENOENT') { reject(err); } });
+        archive.on('error', err => { reject(err); });
     });
 
     archive.pipe(output);
 
-    // Use glob for efficient file finding and exclusion
-    const files = await glob('**/*', {
+    // 4. Define **glob-based** exclusion patterns (prune at any depth)
+    const ignorePatterns = [
+        '**/node_modules/**',
+        '**/dist/**', '**/build/**', '**/out/**', '**/lib/**',
+        '**/.npm/**', '**/.cache/**', '**/coverage/**',
+        '**/npm-debug.log*', '**/yarn-debug.log*', '**/yarn-error.log*',
+        '**/target/**', '**/.gradle/**',
+        '**/vendor/**', 'composer.lock', '.phpunit.result.cache',
+        '**/__pycache__/**', '**/*.py[cod]', '**/*.egg-info/**', '**/.eggs/**', 'pip-log.txt',
+        '**/*.gem', '**/.bundle/**', '**/log/**', '**/tmp/**',
+        '**/**/*.rs.bk',       // Rust backup
+        '**/bin/**', '**/pkg/**',
+        '**/.dart_tool/**', '.packages', '.flutter-plugins', '.flutter-plugins-dependencies',
+        '**/.build/**', 'Packages/**',
+        '**/_build/**', 'erl_crash.dump',
+        '**/.github/_temp/**', '**/.github/actions/cache/**',
+        '**/*.nupkg', '**/*.snupkg', '**/.packages/**', '**/obj/**',
+        '**/build/**', 'conanbuildinfo.*', 'conan.lock',
+        '**/project/target/**', '**/project/project/**', '**/.cache/**',
+        '**/resources/public/js/**', '**/.lein-deps-cache/**',
+        '**/deps/**'
+    ];
+
+    // 5. Debug log (optional) to verify your ignore list
+    console.log('[ZipUtil] Excluding patterns:', ignorePatterns);
+
+    // 6. Let archiver perform a single glob-and-filter pass
+    archive.glob('**/*', {
         cwd: workspacePath,
-        dot: false,         // Exclude dotfiles/folders like .git, .vscode
-        nodir: true,        // Include only files
-        ignore: ['node_modules/**', '.git/**', '**/.*', '.*', 'dist/**', 'out/**'], // Common ignores + build outputs
-        absolute: false     // Relative paths needed for archive structure
+        dot: false,     // do not include dotfiles/folders
+        ignore: ignorePatterns,
     });
-    if (token.isCancellationRequested) { throw new Error('Cancelled by user.'); }
 
-    // Add files to archive
-    for (const file of files) {
-        if (token.isCancellationRequested) { throw new Error('Cancelled by user.'); }
-        const sourcePath = path.join(workspacePath, file);
-        archive.file(sourcePath, { name: file }); // name: use relative path inside archive
-    }
+    // 7. Finalize and await completion
+    await archive.finalize();
+    await archivePromise;
 
-    await archive.finalize(); // Wait for archive data to be written
-    await archivePromise;     // Wait for stream 'close' or 'error'
     return zipFilePath;
 }
 
